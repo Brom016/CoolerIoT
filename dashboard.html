@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cold Chain Console — MQTT Monitor & Control</title>
+<script src="https://unpkg.com/mqtt@5/dist/mqtt.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<!-- SoDoSans is proprietary (DESIGN.md § Known Gaps) — Inter is the documented substitute -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="liquid-glass.js"></script>
+<style>
+/* Hallmark · pre-emit critique: P4 H5 E4 S4 R4 V3
+ * Hallmark · design.md-managed: "Design System Inspired by Starbucks" (DESIGN.md @ project root)
+ * system: canvas #f2f0eb · cards white 12px whisper-shadow · four-tier greens
+ *         (#006241 headings · #00754A CTA · #1E3932 bands · #2b5148 decorative)
+ *         gold reserved for Rewards ceremony — unused here
+ * type:   SoDoSans → Inter (documented substitute) · tracking -0.01em · H1/H2 separated by weight+color
+ * rules:  50px pill buttons + scale(0.95) active · no gradients · layered low-alpha shadows
+ * glass:  liquid-glass.js on cards + bar — refraction Chromium-only, frosted fallback elsewhere
+ * inferred (design gate waived by "ubah tampilannya"): audience = student demo · use = monitor+control · tone = warm café instrument
+ */
+:root{
+  --canvas:#f2f0eb;          /* Neutral Warm page canvas */
+  --ceramic:#edebe9;         /* meter tracks / soft zones */
+  --card:#ffffff;
+  --green-brand:#006241;     /* Starbucks Green — headings */
+  --green-cta:#00754A;       /* Green Accent — filled CTAs */
+  --green-house:#1E3932;     /* House Green — dark bands */
+  --green-uplift:#2b5148;    /* decorative only */
+  --green-light:#d4e9e2;     /* pale mint wash */
+  --ink:rgba(0,0,0,0.87);
+  --ink-soft:rgba(0,0,0,0.58);
+  --white-soft:rgba(255,255,255,0.70);
+  --red:#c82014;
+  --yellow:#fbbc05;
+  --input-border:#d6dbde;
+  --neutral-cool:#f9f9f9;
+  --hairline:#e7e7e7;
+  --glass-bg:rgba(255,255,255,0.68);
+  --glass-border:rgba(255,255,255,0.85);
+  --glass-highlight:rgba(255,255,255,0.9);
+  --shadow-card:0 0 0.5px rgba(0,0,0,0.14), 0 1px 1px rgba(0,0,0,0.24);
+  --shadow-band:0 1px 3px rgba(0,0,0,0.1), 0 2px 2px rgba(0,0,0,0.06), 0 0 2px rgba(0,0,0,0.07);
+  --radius-card:12px;
+  --radius-pill:50px;
+  --radius-input:4px;
+  --space-1:4px; --space-2:8px; --space-3:16px; --space-4:24px; --space-5:32px; --space-6:40px;
+  --font-sans:Inter,"Helvetica Neue",Helvetica,Arial,sans-serif;
+}
+*{ box-sizing:border-box; margin:0; }
+html,body{ overflow-x:clip; }
+body{
+  background:var(--canvas); color:var(--ink);
+  font:400 14px/1.5 var(--font-sans);
+  letter-spacing:-0.01em;
+}
+h1{ font:600 24px/1.2 var(--font-sans); letter-spacing:-0.01em; }
+h2{ font:700 13px/1.5 var(--font-sans); text-transform:uppercase;
+    letter-spacing:0.325px; color:var(--ink-soft); margin-bottom:var(--space-2); }
+
+/* ---------- dark green bands (header / footer) ---------- */
+.band{
+  background:var(--green-house); color:#fff;
+  box-shadow:var(--shadow-band);
+  padding:var(--space-3) var(--space-4);
+}
+.top{ display:flex; flex-wrap:wrap; gap:var(--space-3); align-items:center;
+      justify-content:space-between; }
+.top .sub{ color:var(--white-soft); font-size:13px; margin-top:2px; }
+.conn{ display:flex; align-items:center; gap:var(--space-2); font-size:13px;
+       color:var(--white-soft); }
+.fresh{ color:var(--white-soft); }
+.fresh.stale{ color:var(--yellow); }
+
+.dot{ width:10px; height:10px; border-radius:50%; background:var(--input-border);
+      display:inline-block; flex:none; }
+.dot.on{ background:var(--green-light); }
+.dot.warn{ background:var(--yellow); }
+.dot.bad{ background:var(--red); }
+.dot.comp-on{ background:var(--green-cta); }
+.band .dot{ box-shadow:0 0 0 2px rgba(255,255,255,0.35); }
+
+/* ---------- shell ---------- */
+.shell{ max-width:1440px; margin:0 auto;
+        padding:var(--space-3) var(--space-4) var(--space-4); }
+
+/* ---------- connection bar (glass) ---------- */
+.bar{ display:flex; flex-wrap:wrap; gap:var(--space-3); align-items:flex-end;
+      background:var(--glass-bg); border:1px solid var(--glass-border);
+      border-radius:var(--radius-card);
+      box-shadow:inset 0 1px 0 var(--glass-highlight), var(--shadow-card);
+      padding:var(--space-3) var(--space-4); margin-bottom:var(--space-3); }
+.bar label{ display:flex; flex-direction:column; gap:4px; font-size:13px;
+            color:var(--ink-soft); }
+.bar label.grow{ flex:1 1 240px; }
+input{
+  background:var(--card); border:1px solid var(--input-border);
+  border-radius:var(--radius-input);
+  color:var(--ink); font:400 14px var(--font-sans); letter-spacing:-0.01em;
+  padding:10px 12px; min-width:0; width:100%;
+  transition:border-color 0.2s ease;
+}
+input:focus{ border-color:var(--green-cta); }
+input:focus-visible{ outline:2px solid var(--green-brand); outline-offset:1px; }
+
+/* ---------- buttons — full pill, scale(0.95) active ---------- */
+.btn{
+  font:600 14px/1.2 var(--font-sans); letter-spacing:-0.01em;
+  color:var(--green-cta); background:transparent;
+  border:1px solid var(--green-cta); border-radius:var(--radius-pill);
+  padding:7px 16px; cursor:pointer; white-space:nowrap;
+  transition:all 0.2s ease;
+}
+.btn:hover{ background:rgba(0,117,74,0.06); }
+.btn:focus-visible{ outline:2px solid var(--green-brand); outline-offset:2px; }
+.btn:active{ transform:scale(0.95); }
+.btn:disabled{ opacity:0.4; cursor:not-allowed; transform:none; }
+.btn.primary{ background:var(--green-cta); border-color:var(--green-cta); color:#fff; }
+.btn.primary:hover{ background:var(--green-brand); border-color:var(--green-brand); }
+.btn.danger:hover{ border-color:var(--red); color:var(--red); background:rgba(200,32,20,0.05); }
+.btn.mode.is-active{ background:var(--green-cta); border-color:var(--green-cta); color:#fff; }
+
+/* ---------- grid + glass cards ---------- */
+.grid{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--space-3); }
+.card{
+  background:var(--glass-bg); border:1px solid var(--glass-border);
+  border-radius:var(--radius-card);
+  box-shadow:inset 0 1px 0 var(--glass-highlight), var(--shadow-card);
+  padding:var(--space-3) var(--space-4); min-width:0;
+}
+.ro{ grid-column:span 1; }
+.big{ font:600 32px/1.2 var(--font-sans); letter-spacing:-0.01em;
+      font-variant-numeric:tabular-nums; }
+.big small{ font-size:14px; color:var(--ink-soft); font-weight:400; margin-left:4px; }
+.cap{ font-size:13px; color:var(--ink-soft); margin-top:2px; }
+.tag{ display:inline-block; font-size:12px; font-weight:600; letter-spacing:-0.01em;
+      padding:2px 12px; border-radius:var(--radius-pill); margin-top:var(--space-2);
+      border:1px solid var(--input-border); color:var(--ink-soft);
+      background:var(--neutral-cool); }
+.tag.low{ background:rgba(251,188,5,0.22); border-color:transparent; color:var(--ink); }
+.tag.crit{ background:var(--red); border-color:var(--red); color:#fff; }
+
+.state{ grid-column:span 1; }
+.badge{ display:inline-block; font-size:13px; font-weight:600; letter-spacing:-0.01em;
+        padding:4px 14px; border-radius:var(--radius-pill);
+        border:1px solid var(--input-border); color:var(--ink-soft);
+        background:var(--neutral-cool); }
+.badge.ok{   background:var(--green-light); border-color:transparent; color:var(--green-house); }
+.badge.warn{ background:rgba(251,188,5,0.22); border-color:transparent; color:var(--ink); }
+.badge.info{ background:var(--neutral-cool); border-color:var(--input-border); color:var(--ink); }
+.badge.bad{  background:rgba(200,32,20,0.08); border-color:var(--red); color:var(--red); }
+.badge.crit{ background:var(--red); border-color:var(--red); color:#fff; }
+.row{ display:flex; align-items:center; gap:var(--space-2); margin-top:var(--space-3);
+      font-size:13px; color:var(--ink-soft); }
+.row .val{ margin-left:auto; color:var(--ink);
+           font-variant-numeric:tabular-nums; }
+.meter{ flex:1 1 auto; min-width:40px; height:8px; background:var(--ceramic);
+        border-radius:var(--radius-pill); overflow:hidden; }
+.meter i{ display:block; height:100%; width:0%; background:var(--green-cta);
+          transition:width 0.3s cubic-bezier(0.25,0.46,0.45,0.94); }
+.meter i.hot{ background:var(--red); }
+.meter i.warnbg{ background:var(--yellow); }
+
+.power{ grid-column:span 1; }
+.meter.tall{ height:12px; margin-top:var(--space-2); }
+
+.chartcard{ grid-column:span 2; }
+.chartwrap{ position:relative; height:240px; }
+
+.controls{ grid-column:span 1; }
+.grp{ margin-bottom:var(--space-4); }
+.grp .lbl{ font-size:13px; font-weight:700; text-transform:uppercase;
+           letter-spacing:0.325px; color:var(--ink-soft); margin-bottom:var(--space-2); }
+.btnrow{ display:flex; flex-wrap:wrap; gap:var(--space-2); }
+.sp{ display:flex; gap:var(--space-2); align-items:center; }
+.sp input{ width:70px; padding:8px 10px; }
+.sp .u{ color:var(--ink-soft); font-size:13px; }
+.note{ font-size:13px; color:var(--ink-soft); margin-top:var(--space-2); }
+
+.events{ grid-column:span 2; }
+.elist{ max-height:260px; overflow-y:auto; display:flex; flex-direction:column;
+        gap:var(--space-2); }
+.elist .ev{ border-left:2px solid var(--hairline); padding:2px 0 2px 10px; font-size:13px; }
+.elist .ev b{ color:var(--green-cta); font-weight:600; }
+.elist .ev .t{ color:var(--ink-soft); }
+.elist .ev.crit{ border-color:var(--red); }
+.elist .ev.bad{ border-color:var(--red); }
+.elist .ev.warn{ border-color:var(--yellow); }
+.elist .empty{ color:var(--ink-soft); font-size:13px; }
+
+.chain{ grid-column:span 1; }
+.chain ol{ list-style:none; }
+.chain li{ font-size:13px; padding:4px 0; border-bottom:1px dashed var(--hairline);
+           font-variant-numeric:tabular-nums; }
+.chain li b{ color:var(--green-cta); font-weight:600; }
+.chain li .sq{ color:var(--ink-soft); }
+.chain .hint{ font-size:13px; color:var(--ink-soft); margin-top:var(--space-3); }
+
+.foot{ margin-top:var(--space-4); }
+.foot p{ font-size:13px; color:var(--white-soft); }
+
+/* ---------- responsive (DESIGN.md breakpoints: 480 / 1023) ---------- */
+@media (max-width:1023px){
+  .grid{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .chartcard,.events{ grid-column:span 2; }
+}
+@media (max-width:480px){
+  .grid{ grid-template-columns:minmax(0,1fr); }
+  .chartcard,.events{ grid-column:span 1; }
+  .big{ font-size:28px; }
+  .bar{ flex-direction:column; align-items:stretch; }
+}
+@media (prefers-reduced-motion:reduce){
+  *{ transition:none !important; }
+}
+</style>
+</head>
+<body>
+
+<header class="band top">
+  <div>
+    <h1>Cold Chain Console</h1>
+    <p class="sub">Remote monitor &amp; control over MQTT · pairs with the Wokwi ESP32 simulation</p>
+  </div>
+  <div class="conn">
+    <span id="connDot" class="dot"></span><span id="connText">offline</span>
+    <span class="fresh" id="fresh"></span>
+  </div>
+</header>
+
+<div class="shell">
+<section class="bar">
+  <label class="grow">Broker (WebSocket URL)
+    <input id="url" value="wss://broker.hivemq.com:8884/mqtt" spellcheck="false">
+  </label>
+  <label class="grow">Topic prefix (must match TOPIC_BASE in sketch.ino)
+    <input id="base" value="coldchain/box001" spellcheck="false">
+  </label>
+  <button id="btnConn" class="btn primary">Connect</button>
+</section>
+
+<main class="grid">
+
+  <section class="card ro"><h2>Payload top</h2>
+    <div class="big"><span id="t1">--.-</span><small>°C</small></div>
+    <div class="cap">DS18B20 probe 1</div>
+  </section>
+
+  <section class="card ro"><h2>Payload bottom</h2>
+    <div class="big"><span id="t2">--.-</span><small>°C</small></div>
+    <div class="cap">DS18B20 probe 2</div>
+  </section>
+
+  <section class="card ro"><h2>Ambient</h2>
+    <div class="big"><span id="amb">--</span><small>°C</small></div>
+    <div class="cap">outside air (drag the DHT22 slider)</div>
+  </section>
+
+  <section class="card ro"><h2>Battery</h2>
+    <div class="big"><span id="batt">--.-</span><small>V</small></div>
+    <div class="cap">12 V LiFePO₄ · LOW &lt; 11.0 · CRIT &lt; 10.5</div>
+    <span class="tag" id="battTag">—</span>
+  </section>
+
+  <section class="card state"><h2>State</h2>
+    <span class="badge" id="badge">WAITING</span>
+    <div class="row"><span>Compressor</span>
+      <span id="compDot" class="dot"></span>
+      <span class="val" id="compTxt">—</span></div>
+    <div class="row"><span>Excursion</span>
+      <div class="meter"><i id="excBar"></i></div>
+      <span class="val" id="excTxt">0.0/15m</span></div>
+  </section>
+
+  <section class="card power"><h2>Cold reserve (PCM)</h2>
+    <div class="big"><span id="pcm">--</span><small>%</small></div>
+    <div class="meter tall"><i id="pcmBar"></i></div>
+    <div class="row"><span>Passive holdover left</span><span class="val" id="hold">—</span></div>
+    <div class="cap">full PCM = 24 story-hours at ΔT = 35 K</div>
+  </section>
+
+  <section class="card chartcard"><h2>Temperature · story time</h2>
+    <div class="chartwrap"><canvas id="chart"></canvas></div>
+  </section>
+
+  <section class="card controls"><h2>Controls</h2>
+    <div class="grp">
+      <div class="lbl">Compressor mode</div>
+      <div class="btnrow">
+        <button class="btn mode" data-mode="auto" disabled>Auto</button>
+        <button class="btn mode" data-mode="on" disabled>Force on</button>
+        <button class="btn mode danger" data-mode="off" disabled>Force off</button>
+      </div>
+      <div class="note">Force-on is blocked by the box itself when mains or battery is down.</div>
+    </div>
+    <div class="grp">
+      <div class="lbl">Setpoints (hysteresis)</div>
+      <div class="sp">
+        <input id="onT" type="number" step="0.5" min="2" max="7.5" value="7">
+        <span class="u">ON ≥ °C</span>
+        <input id="offT" type="number" step="0.5" min="2" max="7" value="5">
+        <span class="u">OFF ≤ °C</span>
+      </div>
+      <div class="btnrow" style="margin-top:8px">
+        <button class="btn" id="btnSp" disabled>Apply setpoints</button>
+      </div>
+    </div>
+    <div class="grp">
+      <div class="lbl">Actions</div>
+      <div class="btnrow">
+        <button class="btn" id="btnMute" disabled>Mute buzzer</button>
+        <button class="btn" id="btnHand" disabled>Custody handover</button>
+        <button class="btn" id="btnPing" disabled>Refresh now</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="card events"><h2>Event log</h2>
+    <div class="elist" id="events"><p class="empty">Waiting for events…</p></div>
+  </section>
+
+  <section class="card chain"><h2>Hash chain</h2>
+    <ol id="chain"><li class="sq">waiting for telemetry…</li></ol>
+    <p class="hint">Each record's fingerprint includes the previous one — editing any old record breaks every link after it (tamper-evident).</p>
+  </section>
+
+</main>
+</div>
+
+<footer class="band foot">
+  <p>Public-broker demo: telemetry is world-readable and commands are unauthenticated.
+     Use a unique topic prefix; a real deployment uses an authenticated broker over TLS
+     with per-device keys. → sketch.ino · TOPIC_BASE</p>
+</footer>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+
+/* ---------- state ---------- */
+const DEFAULT_URL  = "wss://broker.hivemq.com:8884/mqtt";
+const DEFAULT_BASE = "coldchain/box001";
+let client = null, base = DEFAULT_BASE, isConnected = false;
+let lastMsgAt = 0;
+const chainList = [];
+const MAX_POINTS = 180;
+
+/* ---------- chart (colors mirror the DESIGN.md tokens) ---------- */
+const chart = new Chart($("chart"), {
+  type: "line",
+  data: { labels: [], datasets: [
+    { label: "T1 top",  data: [], borderColor: "#00754A", borderWidth: 2, pointRadius: 0, tension: .25 },
+    { label: "T2 bot",  data: [], borderColor: "#1E3932", borderWidth: 2, pointRadius: 0, tension: .25 },
+    { label: "Ambient", data: [], borderColor: "#fbbc05", borderWidth: 1.5, borderDash: [6,4], pointRadius: 0, tension: .2 },
+    { label: "8 °C limit", data: [], borderColor: "#c82014", borderWidth: 1, borderDash: [2,4], pointRadius: 0 },
+    { label: "2 °C limit", data: [], borderColor: "rgba(0,0,0,0.4)", borderWidth: 1, borderDash: [2,4], pointRadius: 0 }
+  ]},
+  options: {
+    animation: false, responsive: true, maintainAspectRatio: false,
+    interaction: { mode: "nearest", intersect: false },
+    scales: {
+      x: { ticks: { color: "rgba(0,0,0,0.58)", maxTicksLimit: 8,
+                    font: { family: "Inter, Arial, sans-serif", size: 10 } },
+           grid: { color: "rgba(0,0,0,0.06)" } },
+      y: { suggestedMin: 0, suggestedMax: 45,
+           ticks: { color: "rgba(0,0,0,0.58)",
+                    font: { family: "Inter, Arial, sans-serif", size: 10 } },
+           grid: { color: "rgba(0,0,0,0.06)" } }
+    },
+    plugins: { legend: { labels: { color: "rgba(0,0,0,0.87)",
+                                   font: { family: "Inter, Arial, sans-serif", size: 10 },
+                                   boxWidth: 14 } } }
+  }
+});
+
+/* ---------- connection ---------- */
+function setConn(mode, detail) {
+  const dot = $("connDot"), txt = $("connText"), btn = $("btnConn");
+  document.querySelectorAll(".btn.mode,#btnSp,#btnMute,#btnHand,#btnPing")
+    .forEach(b => b.disabled = (mode !== "online"));
+  if (mode === "online")      { dot.className = "dot on";  txt.textContent = "MQTT connected"; btn.textContent = "Disconnect"; }
+  else if (mode === "connecting") { dot.className = "dot warn"; txt.textContent = "connecting…"; btn.textContent = "Connect"; }
+  else if (mode === "error")  { dot.className = "dot bad"; txt.textContent = "error" + (detail ? ": " + detail : ""); btn.textContent = "Connect"; }
+  else                        { dot.className = "dot";     txt.textContent = "offline"; btn.textContent = "Connect"; }
+}
+
+function connect() {
+  if (client) { try { client.end(true); } catch (e) {} client = null; }
+  const url = $("url").value.trim() || DEFAULT_URL;
+  base = ($("base").value.trim() || DEFAULT_BASE).replace(/\/+$/, "");
+  setConn("connecting");
+  try {
+    client = mqtt.connect(url, {
+      clientId: "ccdash-" + Math.random().toString(16).slice(2, 10),
+      reconnectPeriod: 4000, connectTimeout: 8000
+    });
+  } catch (e) { setConn("error", e.message); return; }
+  client.on("connect", () => {
+    isConnected = true; setConn("online");
+    ["status", "state", "event", "settings"].forEach(s => client.subscribe(base + "/" + s));
+  });
+  client.on("message", onMessage);
+  client.on("error",   e  => setConn("error", e && e.message ? e.message : "connection error"));
+  client.on("close",   () => { isConnected = false; setConn("offline"); });
+  client.on("reconnect", () => setConn("connecting"));
+}
+
+function disconnect() {
+  if (client) { try { client.end(true); } catch (e) {} }
+  client = null; isConnected = false; setConn("offline");
+}
+
+function cmd(obj) {
+  if (!isConnected || !client) return;
+  client.publish(base + "/cmd", JSON.stringify(obj));
+}
+
+/* ---------- incoming messages ---------- */
+function onMessage(topic, msg) {
+  lastMsgAt = Date.now();
+  const suffix = topic.slice(base.length + 1);
+  let data = null;
+  try { data = JSON.parse(msg.toString()); } catch (e) { return; }
+  if      (suffix === "state")    onState(data);
+  else if (suffix === "event")    onEvent(data);
+  else if (suffix === "settings") onSettings(data);
+  else if (suffix === "status")   onStatus(msg.toString().trim());
+}
+
+const BADGE_CLASS = { OK:"ok", "DOOR-OPEN":"warn", "BATT-LOW":"warn",
+                      "PASSIVE-HOLD":"info", EXCURSION:"bad", QUARANTINE:"crit", OFFLINE:"" };
+
+function onState(d) {
+  $("t1").textContent  = d.t1.toFixed(1);
+  $("t2").textContent  = d.t2.toFixed(1);
+  $("amb").textContent = d.amb.toFixed(0);
+  $("batt").textContent = d.batt.toFixed(1);
+  const bt = $("battTag");
+  if      (d.batt < 10.5) { bt.textContent = "CRITICAL"; bt.className = "tag crit"; }
+  else if (d.batt < 11.0) { bt.textContent = "LOW";      bt.className = "tag low"; }
+  else                    { bt.textContent = "OK";       bt.className = "tag"; }
+
+  const badge = $("badge");
+  badge.textContent = d.state;
+  badge.className = "badge " + (BADGE_CLASS[d.state] || "");
+
+  $("compDot").className = "dot " + (d.comp ? "comp-on" : "");
+  $("compTxt").textContent = d.comp ? "RUNNING" : "stopped";
+
+  const pct = Math.min(100, d.exc / 15 * 100);
+  const eb = $("excBar");
+  eb.style.width = pct + "%";
+  eb.className = pct > 60 ? "hot" : (pct > 25 ? "warnbg" : "");
+  $("excTxt").textContent = d.exc.toFixed(1) + "/15m";
+
+  $("pcm").textContent = d.pcm.toFixed(0);
+  const pb = $("pcmBar");
+  pb.style.width = d.pcm + "%";
+  pb.className = d.pcm < 20 ? "hot" : (d.pcm < 45 ? "warnbg" : "");
+  $("hold").textContent = d.hold >= 99 ? "≥ 99 h" : d.hold.toFixed(1) + " h";
+
+  chainList.push({ seq: d.seq, hash: d.hash });
+  if (chainList.length > 6) chainList.shift();
+  $("chain").innerHTML = chainList.slice().reverse()
+    .map((r, i) => "<li><b>" + r.hash + "</b>  <span class='sq'>record #" + r.seq +
+                   (i === 0 ? " · chain head" : "") + "</span></li>").join("");
+
+  pushChart(d);
+}
+
+function pushChart(d) {
+  const c = chart.data;
+  c.labels.push(d.t);
+  c.datasets[0].data.push(d.t1);
+  c.datasets[1].data.push(d.t2);
+  c.datasets[2].data.push(d.amb);
+  c.datasets[3].data.push(8);
+  c.datasets[4].data.push(2);
+  while (c.labels.length > MAX_POINTS) {
+    c.labels.shift();
+    c.datasets.forEach(ds => ds.data.shift());
+  }
+  chart.update("none");
+}
+
+const EV_CLASS = { "QUARANTINE FLAGGED":"crit", "EXCURSION START":"bad",
+                   "BATTERY LOW":"warn", "DOOR OPEN":"warn" };
+
+function onEvent(d) {
+  const box = $("events");
+  const empty = box.querySelector(".empty"); if (empty) empty.remove();
+  const div = document.createElement("div");
+  div.className = "ev " + (EV_CLASS[d.event] || "");
+  div.innerHTML = "<b>" + esc(d.event) + "</b> <span class='t'>· t=" + esc(d.t) +
+                  " · #" + d.seq + "</span><br>" + esc(d.note || "");
+  box.prepend(div);
+  while (box.children.length > 60) box.lastChild.remove();
+}
+
+function onSettings(d) {
+  document.querySelectorAll(".btn.mode").forEach(b =>
+    b.classList.toggle("is-active", b.dataset.mode === d.mode));
+  $("onT").value  = d.onT;
+  $("offT").value = d.offT;
+}
+
+function onStatus(s) {
+  if (s === "offline") {
+    const badge = $("badge");
+    badge.textContent = "OFFLINE";
+    badge.className = "badge";
+    $("compTxt").textContent = "—";
+  }
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, m =>
+    ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[m]));
+}
+
+/* ---------- buttons ---------- */
+$("btnConn").addEventListener("click", () => isConnected ? disconnect() : connect());
+document.querySelectorAll(".btn.mode").forEach(b =>
+  b.addEventListener("click", () => cmd({ cmd: "mode", value: b.dataset.mode })));
+$("btnSp").addEventListener("click", () => {
+  const on  = parseFloat($("onT").value);
+  const off = parseFloat($("offT").value);
+  if (isNaN(on) || isNaN(off)) return;
+  cmd({ cmd: "setpoints", on: on, off: off });
+});
+$("btnMute").addEventListener("click", () => cmd({ cmd: "mute" }));
+$("btnHand").addEventListener("click", () => cmd({ cmd: "handover" }));
+$("btnPing").addEventListener("click", () => cmd({ cmd: "ping" }));
+
+/* ---------- freshness ticker ---------- */
+setInterval(() => {
+  const el = $("fresh");
+  if (!lastMsgAt) { el.textContent = ""; el.className = "fresh"; return; }
+  const s = Math.round((Date.now() - lastMsgAt) / 1000);
+  el.textContent = "updated " + s + "s ago";
+  el.className = "fresh" + (s > 10 ? " stale" : "");
+}, 1000);
+
+/* ---------- liquid glass (Chromium refraction; frosted fallback elsewhere) ---------- */
+if (window.liquidGlass) {
+  document.querySelectorAll(".card, .bar").forEach(el =>
+    liquidGlass(el, { scale: -70, chroma: 4, blur: 4, saturate: 1.4, fallbackBlur: 12 }));
+}
+</script>
+</body>
+</html>
