@@ -5,8 +5,8 @@
  *  Simulates the electronics & software logic of the 30 L cold
  *  chain transport box (see detail.md):
  *
- *   - 2x DS18B20 payload probes on one OneWire bus
- *     (probe 1 = top, probe 2 = bottom; real build has 3)
+ *   - 3x DS18B20 payload probes on one OneWire bus
+ *     (T1 top-centre, T2 bottom-centre, T3 mid wall - detail.md §10)
  *   - DHT22 = ambient air (set its slider to 38-42 C)
  *   - Compressor hysteresis control (defaults: ON > 7 C, OFF < 5 C,
  *     adjustable live from the web dashboard)
@@ -157,7 +157,7 @@ Adafruit_SSD1306 oled(128, 64, &Wire, -1);
 
 // ---------------- State ----------------
 uint8_t  probeCount = 0;
-float    t1 = 4.5, t2 = 4.8, tAmb = 40.0, hum = 70.0;
+float    t1 = 4.5, t2 = 4.8, t3 = 4.9, tAmb = 40.0, hum = 70.0;
 float    battV = 12.4;
 bool     mainsOK = true, doorOpen = false, compOn = false;
 bool     muted = false, quarantined = false, excActive = false;
@@ -182,12 +182,13 @@ unsigned long lastLoopMs = 0, lastOledMs = 0, lastLogMs = 0;
 // A {"cmd":"sim",...} command from the web dashboard pins one or more
 // simulated inputs so the demo scenarios can be driven from the browser.
 // NAN / -1 = not pinned: the loop then reads the Wokwi part as usual.
-float  simT1 = NAN, simT2 = NAN, simTamb = NAN, simBatt = NAN;
+float  simT1 = NAN, simT2 = NAN, simT3 = NAN, simTamb = NAN, simBatt = NAN;
 int8_t simMains = -1, simDoor = -1;
 
 void applySimOverrides() {
   if (!isnan(simT1))   t1    = simT1;
   if (!isnan(simT2))   t2    = simT2;
+  if (!isnan(simT3))   t3    = simT3;
   if (!isnan(simTamb)) tAmb  = simTamb;
   if (!isnan(simBatt)) battV = simBatt;
   if (simMains >= 0)   mainsOK  = (simMains == 1);
@@ -224,7 +225,7 @@ void buzzerTone(uint32_t freq) {
 }
 
 // Control uses the warmest probe (worst case), alarm uses it too
-float tMax() { return fmaxf(t1, t2); }
+float tMax() { return fmaxf(t1, fmaxf(t2, t3)); }
 
 const char* stateName() {
   if (quarantined)         return "QUARANTINE";
@@ -255,12 +256,12 @@ void logRecord(const char *eventLabel, const char *humanNote) {
   char line[220];
   if (eventLabel != nullptr) {
     snprintf(line, sizeof(line),
-             "REC #%lu | t=%s | T1=%.1fC T2=%.1fC | AMB=%.1fC | STATE=%s | BAT=%.1fV | PCM=%.0f%% HOLD=%.1fh | EVENT: %s",
-             (unsigned long)seq, tbuf, t1, t2, tAmb, stateName(), battV, pcmSoc, holdoverH, eventLabel);
+             "REC #%lu | t=%s | T1=%.1fC T2=%.1fC T3=%.1fC | AMB=%.1fC | STATE=%s | BAT=%.1fV | PCM=%.0f%% HOLD=%.1fh | EVENT: %s",
+             (unsigned long)seq, tbuf, t1, t2, t3, tAmb, stateName(), battV, pcmSoc, holdoverH, eventLabel);
   } else {
     snprintf(line, sizeof(line),
-             "REC #%lu | t=%s | T1=%.1fC T2=%.1fC | AMB=%.1fC | STATE=%s | BAT=%.1fV | PCM=%.0f%% HOLD=%.1fh",
-             (unsigned long)seq, tbuf, t1, t2, tAmb, stateName(), battV, pcmSoc, holdoverH);
+             "REC #%lu | t=%s | T1=%.1fC T2=%.1fC T3=%.1fC | AMB=%.1fC | STATE=%s | BAT=%.1fV | PCM=%.0f%% HOLD=%.1fh",
+             (unsigned long)seq, tbuf, t1, t2, t3, tAmb, stateName(), battV, pcmSoc, holdoverH);
   }
 
   uint32_t newHash = fnv1a(line, prevHash);
@@ -299,11 +300,11 @@ void publishTelemetry() {
 #endif
   char buf[380];
   snprintf(buf, sizeof(buf),
-           "{\"seq\":%lu,\"t\":\"%s\",\"t1\":%.2f,\"t2\":%.2f,\"amb\":%.1f,"
+           "{\"seq\":%lu,\"t\":\"%s\",\"t1\":%.2f,\"t2\":%.2f,\"t3\":%.2f,\"amb\":%.1f,"
            "\"state\":\"%s\",\"batt\":%.2f,\"pcm\":%.1f,\"hold\":%.1f,"
            "\"exc\":%.1f,\"comp\":%s,\"hash\":\"%08X\","
            "\"lat\":%.4f,\"lon\":%.4f,\"kph\":%.0f,\"sat\":%u}",
-           (unsigned long)seq, tbuf, t1, t2, tAmb, stateName(), battV,
+           (unsigned long)seq, tbuf, t1, t2, t3, tAmb, stateName(), battV,
            pcmSoc, holdoverH, excursionMin, compOn ? "true" : "false", prevHash,
            gLat, gLon, gKph, (unsigned)gSats);
   if (!mqtt.publish(topicState, buf))
@@ -353,7 +354,7 @@ void custodyHandover() {
 //   {"cmd":"setpoints","on":7.0,"off":5.0}
 //   {"cmd":"mute"}   {"cmd":"handover"}   {"cmd":"ping"}
 //   {"cmd":"sim","reset":1}                  <- clear every scenario pin (S1)
-//   {"cmd":"sim","t1":9,"t2":6}              <- pin payload probes (S2)
+//   {"cmd":"sim","t1":9,"t2":6,"t3":5}        <- pin payload probes (S2)
 //   {"cmd":"sim","amb":42,"t1":10,"t2":8.5}  <- excursion setup (S5)
 //   {"cmd":"sim","batt":10.8}                <- pin battery voltage (S6)
 //   {"cmd":"sim","mains":0|1}  {"cmd":"sim","door":0|1}   <- S3 / S4
@@ -449,7 +450,7 @@ void applyCommand(const char *msg) {
     bool   any = false, reset = false;
 
     if (jsonNum(msg, "reset", 0) > 0.5f) {
-      simT1 = simT2 = simTamb = simBatt = NAN;
+      simT1 = simT2 = simT3 = simTamb = simBatt = NAN;
       simMains = simDoor = -1;
       any = reset = true;
     }
@@ -459,6 +460,9 @@ void applyCommand(const char *msg) {
     v = jsonNum(msg, "t2", NAN);
     if (!isnan(v)) { simT2 = v; any = true;
       snprintf(tmp, sizeof(tmp), "T2=%.1fC ", v); strlcat(what, tmp, sizeof(what)); }
+    v = jsonNum(msg, "t3", NAN);
+    if (!isnan(v)) { simT3 = v; any = true;
+      snprintf(tmp, sizeof(tmp), "T3=%.1fC ", v); strlcat(what, tmp, sizeof(what)); }
     v = jsonNum(msg, "amb", NAN);
     if (!isnan(v)) { simTamb = v; any = true;
       snprintf(tmp, sizeof(tmp), "AMB=%.1fC ", v); strlcat(what, tmp, sizeof(what)); }
@@ -638,7 +642,7 @@ void drawOled() {
   oled.setCursor(0, 0);
   oled.printf("COLD-CHAIN %-11s", stateName());
   oled.setCursor(0, 12);
-  oled.printf("T1 %5.1f  T2 %5.1f", t1, t2);
+  oled.printf("T1%4.1f T2%4.1f T3%4.1f", t1, t2, t3);
   oled.setCursor(0, 22);
   oled.printf("AMB %.0fC  HUM %.0f%%", tAmb, hum);
   oled.setCursor(0, 32);
@@ -689,7 +693,7 @@ void setup() {
                 probeCount, PIN_ONEWIRE);
   if (probeCount == 0)
     Serial.println("[DS18B20] !! No probe answered - temps will read -127. Check in Wokwi: "
-                   "both DATA pins -> D4, VCC -> 3V3, GND -> GND, and the 4.7k pull-up (rpull) "
+                   "all three DATA pins -> D4, VCC -> 3V3, GND -> GND, and the 4.7k pull-up (rpull) "
                    "between D4 and 3V3.");
 
   // ---- MQTT topics & connection ----
@@ -740,7 +744,7 @@ void setup() {
   Serial.println("  Field meaning:");
   Serial.println("    REC #  : record number - never repeats, never reorders");
   Serial.println("    t      : story clock hh:mm (compressed shipment time)");
-  Serial.println("    T1/T2  : payload probe temperatures (T1 top, T2 bottom)");
+  Serial.println("    T1/T2/T3: payload probes (T1 top-centre, T2 bottom-centre, T3 mid wall)");
   Serial.println("    AMB    : ambient (outside) air temperature");
   Serial.println("    STATE  : OK | DOOR-OPEN | BATT-LOW | PASSIVE-HOLD | EXCURSION | QUARANTINE");
   Serial.println("    BAT    : battery voltage (LOW < 11.0V, compressor shed < 10.5V)");
@@ -817,26 +821,28 @@ void loop() {
     lastProbeReq = now;
     t1 = probes.getTempCByIndex(0);
     t2 = (probeCount > 1) ? probes.getTempCByIndex(1) : t1;
+    t3 = (probeCount > 2) ? probes.getTempCByIndex(2) : t2;
     static bool warnedDisc = false;                // one hint per failure episode, no spam
     if (t1 == DEVICE_DISCONNECTED_C && !warnedDisc) {
       warnedDisc = true;
       Serial.println("[DS18B20] !! -127 = probe did not answer (DEVICE_DISCONNECTED). "
-                     "Check both DATA wires -> D4 and the 4.7k pull-up (rpull) between D4 and 3V3.");
+                     "Check the DATA wires -> D4 and the 4.7k pull-up (rpull) between D4 and 3V3.");
     } else if (t1 != DEVICE_DISCONNECTED_C) {
       warnedDisc = false;
     }
     // --- sensor-fault watchdog: a dead bus must NOT read as "freezing cold" ---
     // -127 would otherwise keep the hysteresis permanently satisfied and the
     // compressor parked while everything LOOKS fine. Make the failure loud.
-    if (isnan(simT1) && isnan(simT2)) {            // a dashboard pin counts as a live sensor
-      bool bothDead = (t1 == DEVICE_DISCONNECTED_C) && (t2 == DEVICE_DISCONNECTED_C);
-      faultReads = bothDead ? (uint8_t)(faultReads + 1) : 0;
+    if (isnan(simT1) && isnan(simT2) && isnan(simT3)) {   // a dashboard pin counts as a live sensor
+      bool allDead = (t1 == DEVICE_DISCONNECTED_C) && (t2 == DEVICE_DISCONNECTED_C) &&
+                     (t3 == DEVICE_DISCONNECTED_C);
+      faultReads = allDead ? (uint8_t)(faultReads + 1) : 0;
       bool fault = (faultReads >= 3);              // ~5 s of dead bus, not a one-off hiccup
       if (fault != sensorFault) {
         sensorFault = fault;
         if (fault)
           logEvent("SENSOR FAULT",
-                   "Both payload probes stopped answering (-127). The compressor is parked and the PCM holds the temperature passively while the bus is dead.");
+                   "All payload probes stopped answering (-127). The compressor is parked and the PCM holds the temperature passively while the bus is dead.");
         else
           logEvent("SENSOR RECOVERED",
                    "Payload probes answer again - compressor control resumes on the next evaluation.");
@@ -849,6 +855,7 @@ void loop() {
     }
     if (!isnan(simT1)) t1 = simT1;                 // scenario pins win
     if (!isnan(simT2)) t2 = simT2;
+    if (!isnan(simT3)) t3 = simT3;
   }
 
   // ---- DHT22 ambient every ~2 s ----

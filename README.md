@@ -11,7 +11,7 @@ Files in this folder:
 | `libraries.txt` | Library list (for Wokwi VS Code extension / CLI users) |
 
 > **What is simulated:** the *electronics and software logic* of the design.
-> **What is not simulated:** the compressor and PCM hardware. YOU play the physics by dragging the temperature sliders — the controller reacts exactly as the real firmware would. The PCM "cold battery" budget IS computed in software.
+> **What is not simulated:** the compressor and PCM hardware. YOU play the physics by dragging the temperature sliders — the controller reacts exactly as the real firmware would. The PCM "cold battery" budget IS computed in software. BMP390, MPU-6050 and the GNSS hardware are not simulated either — GNSS is a software route (`GPS_SIM`), and the lid reed switch stands in as the blue button.
 
 ---
 
@@ -29,7 +29,7 @@ Files in this folder:
 
 1. In the Wokwi editor, open the **diagram.json** tab (right side, next to `sketch.ino`).
 2. Select everything, delete it, and paste the full contents of this project's `diagram.json`.
-3. The board and parts appear instantly: ESP32, 2× DS18B20, DHT22, OLED, buzzer, 3 LEDs, 3 buttons, slide switch, potentiometer.
+3. The board and parts appear instantly: ESP32, 3× DS18B20, DHT22, OLED, buzzer, 3 LEDs, 3 buttons, slide switch, potentiometer.
 
 ## STEP 2 — Load the firmware
 
@@ -108,7 +108,8 @@ Grouped; colors are suggestions Wokwi renders on screen.
 - `GND` → all module GNDs, buzzer pin 1, LED resistors, buttons, switch pin 1
 
 **Temperature (OneWire bus, shared)**
-- DS18B20-1 DATA and DS18B20-2 DATA → **GPIO 4** (+ 4.7 kΩ resistor between GPIO 4 and 3V3)
+- DS18B20-1 DATA, DS18B20-2 DATA and DS18B20-3 DATA → **GPIO 4** (+ 4.7 kΩ resistor between GPIO 4 and 3V3)
+  - probe names follow detail.md §10: **T1 top-centre · T2 bottom-centre · T3 mid wall**
 
 **Ambient**
 - DHT22 SDA → **GPIO 5**
@@ -135,7 +136,7 @@ Grouped; colors are suggestions Wokwi renders on screen.
 
 | Wokwi part | Real component | Notes |
 |---|---|---|
-| 2× DS18B20 | 3× DS18B20 (waterproof) + 4.7 kΩ | same bus; place per the temperature-mapping plan |
+| 3× DS18B20 | 3× DS18B20 (waterproof) + 4.7 kΩ | same OneWire bus — T1 top-centre, T2 bottom-centre, T3 mid wall (detail.md §10) |
 | DHT22 | SHT4x / DHT22 in machine tier | ambient reference |
 | Green LED | **relay/MOSFET driving the DC compressor** | add flyback diode; compressor on rubber mounts |
 | Potentiometer | battery voltage divider (or fuel-gauge IC) | scale to 12 V rail |
@@ -161,7 +162,7 @@ The `control()` function in the sketch is the heart that transfers unchanged: hy
 | Symptom | Fix |
 |---|---|
 | OLED blank | check I2C wiring (SDA 21 / SCL 22); address must be 0x3C |
-| Temps read −127 (dashboard shows `ERR`) | probe did not answer: check both DS18B20 DATA wires → **D4**, VCC → 3V3, GND → GND, and the **4.7 kΩ pull-up** (`rpull`) between D4 and 3V3. Startup now prints `[DS18B20] N probe(s) found` — if it says 0, the bus is the problem. After ~5 s of dead bus the box enters `SENSOR-FLT` (red LED + beeper) and parks the compressor; it recovers by itself once the bus answers |
+| Temps read −127 (dashboard shows `ERR`) | probe did not answer: check all DS18B20 DATA wires → **D4**, VCC → 3V3, GND → GND, and the **4.7 kΩ pull-up** (`rpull`) between D4 and 3V3. Startup now prints `[DS18B20] N probe(s) found` — if it says 0, the bus is the problem. After ~5 s of dead bus the box enters `SENSOR-FLT` (red LED + beeper) and parks the compressor; it recovers by itself once the bus answers |
 | DHT reads `nan` for the first seconds | normal — wait one read cycle (~2 s) |
 | Compile error on `ledcSetup` | your core is ESP32 v3; the sketch auto-detects, but re-check the `#if` block |
 | Libraries not found | install all seven from STEP 3 |
@@ -211,7 +212,7 @@ talks to the same broker from your browser over WebSocket.
 - **Mute buzzer** — acknowledged-and-logged; the alarm state itself is unchanged.
 - **Custody handover** — logs the event and prints the receipt hash.
 - **Refresh now** — asks the box to publish telemetry immediately.
-- **Simulator inputs** — four sliders (T1, T2, ambient, battery) plus **Mains** / **Lid** toggle buttons. Every change pins the input over MQTT, same as the scenario buttons; S1 · Normal clears every pin.
+- **Simulator inputs** — five sliders (T1, T2, T3, ambient, battery) plus **Mains** / **Lid** toggle buttons. Every change pins the input over MQTT, same as the scenario buttons; S1 · Normal clears every pin.
 
 **Scenario runner (S1–S8) — drive the demos from the browser:**
 

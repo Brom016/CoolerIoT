@@ -253,6 +253,7 @@ input:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1
 .ro    { grid-column: span 1; }
 .state { grid-column: span 1; }
 .power { grid-column: span 1; }
+.w2    { grid-column: span 2; }
 
 /* ── metric display ──────────────────────────────────────────── */
 .big {
@@ -465,6 +466,7 @@ input:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1
   .chartcard, .events { grid-column: span 1; }
   .mapcard { grid-column: span 1; }
   .big { font-size: 28px; }
+  .w2 { grid-column: span 1; }
   .bar { flex-direction: column; align-items: stretch; }
   .shell { padding: var(--space-xs) var(--space-sm) var(--space-sm); }
 }
@@ -517,22 +519,27 @@ input:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1
 
   <section class="card ro"><h2>Payload top</h2>
     <div class="big"><span id="t1">--.-</span><small>°C</small></div>
-    <div class="cap">DS18B20 probe 1</div>
+    <div class="cap">DS18B20 T1 · top-centre</div>
   </section>
 
   <section class="card ro"><h2>Payload bottom</h2>
     <div class="big"><span id="t2">--.-</span><small>°C</small></div>
-    <div class="cap">DS18B20 probe 2</div>
+    <div class="cap">DS18B20 T2 · bottom-centre</div>
+  </section>
+
+  <section class="card ro"><h2>Payload mid-wall</h2>
+    <div class="big"><span id="t3">--.-</span><small>°C</small></div>
+    <div class="cap">DS18B20 T3 · mid wall</div>
   </section>
 
   <section class="card ro"><h2>Ambient</h2>
     <div class="big"><span id="amb">--</span><small>°C</small></div>
-    <div class="cap">outside air (drag the DHT22 slider)</div>
+    <div class="cap">DHT22 · outside air (drag its slider)</div>
   </section>
 
-  <section class="card ro"><h2>Battery</h2>
+  <section class="card ro w2"><h2>Battery</h2>
     <div class="big"><span id="batt">--.-</span><small>V</small></div>
-    <div class="cap">12 V LiFePO₄ · LOW &lt; 11.0 · CRIT &lt; 10.5</div>
+    <div class="cap">12 V LiFePO₄ · machine-tier floor · LOW &lt; 11.0 · CRIT &lt; 10.5</div>
     <span class="tag" id="battTag">—</span>
   </section>
 
@@ -557,7 +564,16 @@ input:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1
     <div class="chartwrap"><canvas id="chart"></canvas></div>
   </section>
 
-  <section class="card controls"><h2>Controls</h2>
+  <section class="card events"><h2>Event log</h2>
+    <div class="elist" id="events"><p class="empty">Waiting for events…</p></div>
+  </section>
+
+  <section class="card chain w2"><h2>Hash chain</h2>
+    <ol id="chain"><li class="sq">waiting for telemetry…</li></ol>
+    <p class="hint">Each record's fingerprint includes the previous one — editing any old record breaks every link after it (tamper-evident).</p>
+  </section>
+
+  <section class="card controls w2"><h2>Controls</h2>
     <div class="grp">
       <div class="lbl">Compressor mode</div>
       <div class="btnrow">
@@ -605,6 +621,7 @@ input:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1
       <div class="lbl">Simulator inputs</div>
       <div class="sp sim"><input id="simT1" type="range" min="-20" max="45" step="0.5" value="4.5" disabled><span class="u" id="simT1v">T1 4.5 °C</span></div>
       <div class="sp sim"><input id="simT2" type="range" min="-20" max="45" step="0.5" value="4.8" disabled><span class="u" id="simT2v">T2 4.8 °C</span></div>
+      <div class="sp sim"><input id="simT3" type="range" min="-20" max="45" step="0.5" value="4.9" disabled><span class="u" id="simT3v">T3 4.9 °C</span></div>
       <div class="sp sim"><input id="simAmb" type="range" min="10" max="45" step="0.5" value="40" disabled><span class="u" id="simAmbv">AMB 40.0 °C</span></div>
       <div class="sp sim"><input id="simBatt" type="range" min="9" max="12.8" step="0.1" value="12.4" disabled><span class="u" id="simBattv">BAT 12.4 V</span></div>
       <div class="btnrow" style="margin-top:8px">
@@ -613,15 +630,6 @@ input:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1
       </div>
       <div class="note">Sliders pin a value live over MQTT; the buttons flip the mains switch / lid. S1 · Normal clears every pin.</div>
     </div>
-  </section>
-
-  <section class="card events"><h2>Event log</h2>
-    <div class="elist" id="events"><p class="empty">Waiting for events…</p></div>
-  </section>
-
-  <section class="card chain"><h2>Hash chain</h2>
-    <ol id="chain"><li class="sq">waiting for telemetry…</li></ol>
-    <p class="hint">Each record's fingerprint includes the previous one — editing any old record breaks every link after it (tamper-evident).</p>
   </section>
 
   <section class="card mapcard"><h2>Lokasi · Sender View</h2>
@@ -716,8 +724,9 @@ const DESTINATION = PLANNED_ROUTE[PLANNED_ROUTE.length - 1];
 const chart = new Chart($('chart'), {
   type: 'line',
   data: { labels: [], datasets: [
-    { label: 'T1 top',     data: [], borderColor: '#000000', borderWidth: 2, pointRadius: 0, tension: .25 },
-    { label: 'T2 bot',     data: [], borderColor: '#666666', borderWidth: 2, pointRadius: 0, tension: .25 },
+    { label: 'T1 top-centre',    data: [], borderColor: '#000000', borderWidth: 2, pointRadius: 0, tension: .25 },
+    { label: 'T2 bottom-centre', data: [], borderColor: '#666666', borderWidth: 2, pointRadius: 0, tension: .25 },
+    { label: 'T3 mid wall',      data: [], borderColor: '#8a8a8a', borderWidth: 1.5, pointRadius: 0, tension: .25 },
     { label: 'Ambient',    data: [], borderColor: '#f0ad4e', borderWidth: 1.5, borderDash: [6,4], pointRadius: 0, tension: .2 },
     { label: '8 °C limit', data: [], borderColor: '#be6464', borderWidth: 1, borderDash: [2,4], pointRadius: 0 },
     { label: '2 °C limit', data: [], borderColor: 'rgba(0,0,0,0.3)', borderWidth: 1, borderDash: [2,4], pointRadius: 0 }
@@ -830,7 +839,7 @@ function updateMap(lat, lon, kph, sat) {
 /* ── connection ───────────────────────────────────────────────────────── */
 function setConn(mode, detail) {
   const dot = $('connDot'), txt = $('connText'), btn = $('btnConn');
-  document.querySelectorAll('.btn.mode,.btn.scn,#btnSp,#btnMute,#btnHand,#btnPing,#simT1,#simT2,#simAmb,#simBatt,#tglMains,#tglLid')
+  document.querySelectorAll('.btn.mode,.btn.scn,#btnSp,#btnMute,#btnHand,#btnPing,#simT1,#simT2,#simT3,#simAmb,#simBatt,#tglMains,#tglLid')
     .forEach(b => b.disabled = (mode !== 'online'));
   if      (mode === 'online')      { dot.className = 'dot on';   txt.textContent = 'MQTT connected'; btn.textContent = 'Disconnect'; }
   else if (mode === 'connecting')  { dot.className = 'dot warn'; txt.textContent = 'connecting…';   btn.textContent = 'Connect'; }
@@ -888,6 +897,7 @@ const BADGE_CLASS = { OK:'ok', 'DOOR-OPEN':'warn', 'BATT-LOW':'warn',
 function onState(d) {
   $('t1').textContent   = d.t1 <= -100 ? 'ERR' : d.t1.toFixed(1);
   $('t2').textContent   = d.t2 <= -100 ? 'ERR' : d.t2.toFixed(1);
+  $('t3').textContent   = d.t3 === undefined ? '--.-' : (d.t3 <= -100 ? 'ERR' : d.t3.toFixed(1));
   $('amb').textContent  = d.amb.toFixed(0);
   $('batt').textContent = d.batt.toFixed(1);
   const bt = $('battTag');
@@ -932,9 +942,10 @@ function pushChart(d) {
   c.labels.push(d.t);
   c.datasets[0].data.push(d.t1 <= -100 ? NaN : d.t1);
   c.datasets[1].data.push(d.t2 <= -100 ? NaN : d.t2);
-  c.datasets[2].data.push(d.amb);
-  c.datasets[3].data.push(8);
-  c.datasets[4].data.push(2);
+  c.datasets[2].data.push((d.t3 === undefined || d.t3 <= -100) ? NaN : d.t3);
+  c.datasets[3].data.push(d.amb);
+  c.datasets[4].data.push(8);
+  c.datasets[5].data.push(2);
   while (c.labels.length > MAX_POINTS) {
     c.labels.shift();
     c.datasets.forEach(ds => ds.data.shift());
@@ -1049,6 +1060,7 @@ function initButtons() {
   };
   bindRange('simT1',   't1',   v => 'T1 ' + v.toFixed(1) + ' °C');
   bindRange('simT2',   't2',   v => 'T2 ' + v.toFixed(1) + ' °C');
+  bindRange('simT3',   't3',   v => 'T3 ' + v.toFixed(1) + ' °C');
   bindRange('simAmb',  'amb',  v => 'AMB ' + v.toFixed(1) + ' °C');
   bindRange('simBatt', 'batt', v => 'BAT ' + v.toFixed(1) + ' V');
 

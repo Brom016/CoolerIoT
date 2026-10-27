@@ -6,6 +6,7 @@
     { "type": "wokwi-esp32-devkit-v1", "id": "esp", "top": 30, "left": -60, "attrs": {} },
     { "type": "wokwi-ds18b20", "id": "temp1", "top": -180, "left": -300, "attrs": { "temp": "4.5" } },
     { "type": "wokwi-ds18b20", "id": "temp2", "top": -180, "left": -190, "attrs": { "temp": "4.8" } },
+    { "type": "wokwi-ds18b20", "id": "temp3", "top": -180, "left": -80, "attrs": { "temp": "4.9" } },
     { "type": "wokwi-resistor", "id": "rpull", "top": -80, "left": -260, "attrs": { "value": "4700" } },
     { "type": "wokwi-dht22", "id": "dht1", "top": 300, "left": -260, "attrs": { "temp": "40", "humidity": "70" } },
     { "type": "wokwi-ssd1306", "id": "oled1", "top": -180, "left": 180, "attrs": {} },
@@ -32,6 +33,9 @@
     [ "temp2:GND", "esp:GND.1", "black", [] ],
     [ "temp2:VCC", "esp:3V3", "red", [] ],
     [ "temp2:DATA", "esp:D4", "blue", [] ],
+    [ "temp3:GND", "esp:GND.1", "black", [] ],
+    [ "temp3:VCC", "esp:3V3", "red", [] ],
+    [ "temp3:DATA", "esp:D4", "blue", [] ],
     [ "rpull:1", "esp:D4", "blue", [] ],
     [ "rpull:2", "esp:3V3", "red", [] ],
 
