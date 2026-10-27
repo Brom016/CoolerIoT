@@ -161,7 +161,7 @@ The `control()` function in the sketch is the heart that transfers unchanged: hy
 | Symptom | Fix |
 |---|---|
 | OLED blank | check I2C wiring (SDA 21 / SCL 22); address must be 0x3C |
-| Temps read −127 | DS18B20 pull-up resistor missing (4.7 kΩ between DATA and 3V3) |
+| Temps read −127 (dashboard shows `ERR`) | probe did not answer: check both DS18B20 DATA wires → **D4**, VCC → 3V3, GND → GND, and the **4.7 kΩ pull-up** (`rpull`) between D4 and 3V3. Startup now prints `[DS18B20] N probe(s) found` — if it says 0, the bus is the problem |
 | DHT reads `nan` for the first seconds | normal — wait one read cycle (~2 s) |
 | Compile error on `ledcSetup` | your core is ESP32 v3; the sketch auto-detects, but re-check the `#if` block |
 | Libraries not found | install all seven from STEP 3 |

@@ -861,8 +861,8 @@ const BADGE_CLASS = { OK:'ok', 'DOOR-OPEN':'warn', 'BATT-LOW':'warn',
                       'PASSIVE-HOLD':'info', EXCURSION:'bad', QUARANTINE:'crit', OFFLINE:'' };
 
 function onState(d) {
-  $('t1').textContent   = d.t1.toFixed(1);
-  $('t2').textContent   = d.t2.toFixed(1);
+  $('t1').textContent   = d.t1 <= -100 ? 'ERR' : d.t1.toFixed(1);
+  $('t2').textContent   = d.t2 <= -100 ? 'ERR' : d.t2.toFixed(1);
   $('amb').textContent  = d.amb.toFixed(0);
   $('batt').textContent = d.batt.toFixed(1);
   const bt = $('battTag');
@@ -905,8 +905,8 @@ function onState(d) {
 function pushChart(d) {
   const c = chart.data;
   c.labels.push(d.t);
-  c.datasets[0].data.push(d.t1);
-  c.datasets[1].data.push(d.t2);
+  c.datasets[0].data.push(d.t1 <= -100 ? NaN : d.t1);
+  c.datasets[1].data.push(d.t2 <= -100 ? NaN : d.t2);
   c.datasets[2].data.push(d.amb);
   c.datasets[3].data.push(8);
   c.datasets[4].data.push(2);
