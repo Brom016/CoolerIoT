@@ -177,6 +177,22 @@ bool prevDoor = false;
 bool prevBattLow = false;
 unsigned long lastLoopMs = 0, lastOledMs = 0, lastLogMs = 0;
 
+// ---------------- Dashboard scenario pins (S1-S8) ----------------
+// A {"cmd":"sim",...} command from the web dashboard pins one or more
+// simulated inputs so the demo scenarios can be driven from the browser.
+// NAN / -1 = not pinned: the loop then reads the Wokwi part as usual.
+float  simT1 = NAN, simT2 = NAN, simTamb = NAN, simBatt = NAN;
+int8_t simMains = -1, simDoor = -1;
+
+void applySimOverrides() {
+  if (!isnan(simT1))   t1    = simT1;
+  if (!isnan(simT2))   t2    = simT2;
+  if (!isnan(simTamb)) tAmb  = simTamb;
+  if (!isnan(simBatt)) battV = simBatt;
+  if (simMains >= 0)   mainsOK  = (simMains == 1);
+  if (simDoor  >= 0)   doorOpen = (simDoor  == 1);
+}
+
 // ---------------- Utility ----------------
 uint32_t fnv1a(const char *s, uint32_t h) {
   while (*s) { h ^= (uint8_t)*s++; h *= 16777619u; }
@@ -330,6 +346,11 @@ void custodyHandover() {
 //   {"cmd":"mode","value":"auto"}   {"cmd":"mode","value":"on"}   {"cmd":"mode","value":"off"}
 //   {"cmd":"setpoints","on":7.0,"off":5.0}
 //   {"cmd":"mute"}   {"cmd":"handover"}   {"cmd":"ping"}
+//   {"cmd":"sim","reset":1}                  <- clear every scenario pin (S1)
+//   {"cmd":"sim","t1":9,"t2":6}              <- pin payload probes (S2)
+//   {"cmd":"sim","amb":42,"t1":10,"t2":8.5}  <- excursion setup (S5)
+//   {"cmd":"sim","batt":10.8}                <- pin battery voltage (S6)
+//   {"cmd":"sim","mains":0|1}  {"cmd":"sim","door":0|1}   <- S3 / S4
 float jsonNum(const char *j, const char *key, float def) {
   char pat[24];
   snprintf(pat, sizeof(pat), "\"%s\"", key);
@@ -413,6 +434,52 @@ void applyCommand(const char *msg) {
 
   } else if (strcmp(cmdName, "ping") == 0) {
     publishTelemetry();   // refresh now, no log noise
+
+  } else if (strcmp(cmdName, "sim") == 0) {
+    // Scenario runner (S1-S8): pin one or more simulated inputs.
+    // Missing fields keep their current value; reset:1 clears every pin.
+    float  v;
+    char   tmp[20], what[110] = "";
+    bool   any = false, reset = false;
+
+    if (jsonNum(msg, "reset", 0) > 0.5f) {
+      simT1 = simT2 = simTamb = simBatt = NAN;
+      simMains = simDoor = -1;
+      any = reset = true;
+    }
+    v = jsonNum(msg, "t1", NAN);
+    if (!isnan(v)) { simT1 = v; any = true;
+      snprintf(tmp, sizeof(tmp), "T1=%.1fC ", v); strlcat(what, tmp, sizeof(what)); }
+    v = jsonNum(msg, "t2", NAN);
+    if (!isnan(v)) { simT2 = v; any = true;
+      snprintf(tmp, sizeof(tmp), "T2=%.1fC ", v); strlcat(what, tmp, sizeof(what)); }
+    v = jsonNum(msg, "amb", NAN);
+    if (!isnan(v)) { simTamb = v; any = true;
+      snprintf(tmp, sizeof(tmp), "AMB=%.1fC ", v); strlcat(what, tmp, sizeof(what)); }
+    v = jsonNum(msg, "batt", NAN);
+    if (!isnan(v)) { simBatt = v; any = true;
+      snprintf(tmp, sizeof(tmp), "BAT=%.1fV ", v); strlcat(what, tmp, sizeof(what)); }
+    v = jsonNum(msg, "mains", -1);
+    if (v >= 0) { simMains = (v >= 0.5f); any = true;
+      strlcat(what, simMains ? "MAINS=OK " : "MAINS=LOST ", sizeof(what)); }
+    v = jsonNum(msg, "door", -1);
+    if (v >= 0) { simDoor = (v >= 0.5f); any = true;
+      strlcat(what, simDoor ? "LID=OPEN " : "LID=CLOSED ", sizeof(what)); }
+
+    if (!any) {
+      logEvent("REMOTE CMD REJECTED",
+               "Sim command without a recognized field (reset/t1/t2/amb/batt/mains/door). Nothing changed.");
+      return;
+    }
+    applySimOverrides();
+    if (reset) {
+      logEvent("SCENARIO: S1 NORMAL",
+               "All scenario pins cleared - inputs come from the Wokwi parts again. The box should settle back to OK.");
+    } else {
+      snprintf(note, sizeof(note),
+               "Dashboard pinned simulated inputs: %s- logged in this chain like any real input.", what);
+      logEvent("SCENARIO: SIM PINNED", note);
+    }
 
   } else {
     logEvent("REMOTE CMD UNKNOWN",
@@ -694,9 +761,9 @@ void loop() {
 
   netTask();   // keep WiFi/MQTT alive, service subscriptions
 
-  // ---- digital inputs ----
-  mainsOK  = (digitalRead(PIN_MAINS) == HIGH);
-  doorOpen = (digitalRead(BTN_DOOR) == LOW);
+  // ---- digital inputs (a dashboard "sim" pin wins over the Wokwi part) ----
+  mainsOK  = (simMains >= 0) ? (simMains == 1) : (digitalRead(PIN_MAINS) == HIGH);
+  doorOpen = (simDoor  >= 0) ? (simDoor  == 1) : (digitalRead(BTN_DOOR) == LOW);
   if (doorOpen != prevDoor) {
     if (doorOpen) logEvent("DOOR OPEN",
                            "Lid opened - cold air escapes, PCM drain rate is +30% while it stays open.");
@@ -714,6 +781,7 @@ void loop() {
   // ---- battery voltage sim (potentiometer) ----
   int raw = analogRead(PIN_BATT_ADC);              // 0..4095
   battV = 9.0f + (raw / 4095.0f) * 3.8f;           // -> 9.0..12.8 V
+  if (!isnan(simBatt)) battV = simBatt;            // scenario pin wins
   bool battLow = (battV < BATT_LOW_V);
   if (battLow != prevBattLow) {
     if (battLow) logEvent("BATTERY LOW",
@@ -736,6 +804,8 @@ void loop() {
     lastProbeReq = now;
     t1 = probes.getTempCByIndex(0);
     t2 = (probeCount > 1) ? probes.getTempCByIndex(1) : t1;
+    if (!isnan(simT1)) t1 = simT1;                 // scenario pins win
+    if (!isnan(simT2)) t2 = simT2;
   }
 
   // ---- DHT22 ambient every ~2 s ----
@@ -746,6 +816,7 @@ void loop() {
     float h = dht.readHumidity();
     if (!isnan(t)) tAmb = t;
     if (!isnan(h)) hum = h;
+    if (!isnan(simTamb)) tAmb = simTamb;           // scenario pin wins
   }
 
   control(dtStorySec);

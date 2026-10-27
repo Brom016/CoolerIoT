@@ -212,6 +212,26 @@ talks to the same broker from your browser over WebSocket.
 - **Custody handover** — logs the event and prints the receipt hash.
 - **Refresh now** — asks the box to publish telemetry immediately.
 
+**Scenario runner (S1–S8) — drive the demos from the browser:**
+
+The Controls card has a 2×4 grid of scenario buttons. Each sends a `{"cmd":"sim",…}`
+command that *pins* a simulated input inside the box — the Wokwi sliders/switches stay
+untouched and a pinned value survives until you press S1 (or send `reset`). Every pin is
+logged in the tamper-evident chain as `SCENARIO: SIM PINNED` / `SCENARIO: S1 NORMAL`, so
+even the demo controls are auditable. Requires the matching firmware — older sketches
+answer `REMOTE CMD UNKNOWN`.
+
+| Button | Sends | Expected result |
+|---|---|---|
+| S1 · Normal | `{"cmd":"sim","reset":1}` | all pins cleared, inputs read the Wokwi parts again, box settles to OK |
+| S2 · Hysteresis | `{"cmd":"sim","t1":9,"t2":6}` | compressor starts (T1 9 > ON 7); press S1 to cool back — it stops only below 5 |
+| S3 · Power loss | `{"cmd":"sim","mains":0}` | `PASSIVE-HOLD`, compressor LED off, PCM % drains, HOLD counts down |
+| S4 · Door open | `{"cmd":"sim","door":1}` (toggles) | `EVENT: DOOR OPEN`, PCM drain ×1.3 while open; click again to close |
+| S5 · Excursion | `{"cmd":"sim","amb":42,"t1":10,"t2":8.5}` | red LED + beeping, EXC climbs to 15 story-min → `QUARANTINE` latch |
+| S6 · Battery low | `{"cmd":"sim","batt":10.8}` (cycles 10.8 → 10.3 → 12.4 V) | `BATT-LOW`, compressor shed below 10.5 V, then recovery |
+| S7 · Handover | `{"cmd":"handover"}` | `CUSTODY HANDOVER` record + receipt hash |
+| S8 · Tamper test | — (flashes the Hash chain card) | edit an old `REC` line in the serial log → every later fingerprint breaks |
+
 Every command is recorded in the tamper-evident chain (`REMOTE CMD: …` records) — remote control is fully auditable, which is exactly the role-based-access argument the essay makes.
 
 **Security (read this):** `broker.hivemq.com` is a public broker — anyone who knows your topic prefix can watch the telemetry or send commands. Change `TOPIC_BASE` to something unique (e.g. `coldchain/yourname-4271`) on **both** the sketch and the dashboard. A real deployment would use an authenticated broker over TLS with per-device keys and role-based access. Set `MQTT_ENABLED` to `0` to run the simulation fully offline.

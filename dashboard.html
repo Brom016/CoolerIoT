@@ -336,6 +336,13 @@ input:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1
   color: var(--color-mute); margin-bottom: var(--space-xs);
 }
 .btnrow { display: flex; flex-wrap: wrap; gap: var(--space-xs); }
+.btnrow.scn { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-xs); }
+.btn.scn { width: 100%; font-size: 12.5px; }
+@keyframes chainflash {
+  0%, 100% { box-shadow: var(--shadow-card); }
+  40%      { box-shadow: 0 0 0 3px var(--color-primary); }
+}
+.chain.flash { animation: chainflash 1.1s ease 3; }
 .sp { display: flex; gap: var(--space-xs); align-items: center; }
 .sp input { width: 72px; padding: 8px 10px; height: 36px; }
 .sp .u { color: var(--color-mute); font-size: 13px; }
@@ -578,6 +585,20 @@ input:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1
         <button class="btn sm" id="btnPing" disabled>Refresh now</button>
       </div>
     </div>
+    <div class="grp">
+      <div class="lbl">Scenario runner (S1–S8)</div>
+      <div class="btnrow scn">
+        <button class="btn sm scn" id="scnS1" disabled>S1 · Normal</button>
+        <button class="btn sm scn" id="scnS2" disabled>S2 · Hysteresis</button>
+        <button class="btn sm scn" id="scnS3" disabled>S3 · Power loss</button>
+        <button class="btn sm scn" id="scnS4" disabled>S4 · Door open</button>
+        <button class="btn sm scn" id="scnS5" disabled>S5 · Excursion</button>
+        <button class="btn sm scn" id="scnS6" disabled>S6 · Battery low</button>
+        <button class="btn sm scn" id="scnS7" disabled>S7 · Handover</button>
+        <button class="btn sm scn" id="scnS8" disabled>S8 · Tamper test</button>
+      </div>
+      <div class="note">Each button pins the simulated inputs over MQTT. S8 flashes the hash chain: edit an old REC line in the serial log and every later fingerprint stops matching.</div>
+    </div>
   </section>
 
   <section class="card events"><h2>Event log</h2>
@@ -652,6 +673,11 @@ let client = null, base = DEFAULT_BASE, isConnected = false;
 let lastMsgAt = 0;
 const chainList = [];
 const MAX_POINTS = 180;
+
+// scenario runner state (S1-S8)
+let doorPinned = false;                   // S4 lid toggle, tracked dashboard-side
+const BATT_STEPS = [10.8, 10.3, 12.4];    // S6: low -> critical -> back to normal
+let battStep = 0;
 
 // Planned route waypoints — mirrors GPS_ROUTE[] in sketch.ino
 // Simongan Port Semarang → Kudus via Pantura
@@ -780,7 +806,7 @@ function updateMap(lat, lon, kph, sat) {
 /* ── connection ───────────────────────────────────────────────────────── */
 function setConn(mode, detail) {
   const dot = $('connDot'), txt = $('connText'), btn = $('btnConn');
-  document.querySelectorAll('.btn.mode,#btnSp,#btnMute,#btnHand,#btnPing')
+  document.querySelectorAll('.btn.mode,.btn.scn,#btnSp,#btnMute,#btnHand,#btnPing')
     .forEach(b => b.disabled = (mode !== 'online'));
   if      (mode === 'online')      { dot.className = 'dot on';   txt.textContent = 'MQTT connected'; btn.textContent = 'Disconnect'; }
   else if (mode === 'connecting')  { dot.className = 'dot warn'; txt.textContent = 'connecting…';   btn.textContent = 'Connect'; }
@@ -940,6 +966,30 @@ function initButtons() {
   $('btnMute').addEventListener('click', () => cmd({ cmd: 'mute' }));
   $('btnHand').addEventListener('click', () => cmd({ cmd: 'handover' }));
   $('btnPing').addEventListener('click',  () => cmd({ cmd: 'ping' }));
+
+  // ── scenario runner (S1-S8) ──
+  $('scnS1').addEventListener('click', () => cmd({ cmd: 'sim', reset: 1 }));
+  $('scnS2').addEventListener('click', () => cmd({ cmd: 'sim', t1: 9, t2: 6 }));
+  $('scnS3').addEventListener('click', () => cmd({ cmd: 'sim', mains: 0 }));
+  $('scnS4').addEventListener('click', () => {
+    doorPinned = !doorPinned;
+    cmd({ cmd: 'sim', door: doorPinned ? 1 : 0 });
+    $('scnS4').textContent = doorPinned ? 'S4 · Close lid' : 'S4 · Door open';
+  });
+  $('scnS5').addEventListener('click', () => cmd({ cmd: 'sim', amb: 42, t1: 10, t2: 8.5 }));
+  $('scnS6').addEventListener('click', () => {
+    cmd({ cmd: 'sim', batt: BATT_STEPS[battStep] });
+    $('scnS6').textContent = 'S6 · Batt ' + BATT_STEPS[battStep].toFixed(1) + ' V';
+    battStep = (battStep + 1) % BATT_STEPS.length;
+  });
+  $('scnS7').addEventListener('click', () => cmd({ cmd: 'handover' }));
+  $('scnS8').addEventListener('click', () => {
+    const card = document.querySelector('.card.chain');
+    card.classList.remove('flash');
+    void card.offsetWidth;                 // restart the animation
+    card.classList.add('flash');
+    setTimeout(() => card.classList.remove('flash'), 3500);
+  });
 }
 
 /* ── freshness ticker ─────────────────────────────────────────────────────── */
