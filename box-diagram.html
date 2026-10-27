@@ -972,10 +972,13 @@ document.querySelectorAll('.tab').forEach(tab => {
 let lidOpen = false;
 document.getElementById('toggleLid').addEventListener('click', () => {
   lidOpen = !lidOpen;
-  const lidClosed = document.getElementById('lid');
-  const lidOpenEl = document.getElementById('lid-open');
-  lidClosed.style.display  = lidOpen ? 'none' : '';
-  lidOpenEl.setAttribute('display', lidOpen ? '' : 'none');
+  const lidClosedEl = document.getElementById('lid');
+  const lidOpenEl   = document.getElementById('lid-open');
+  if (!lidClosedEl || !lidOpenEl) return;
+  lidClosedEl.style.display = lidOpen ? 'none' : '';
+  // 'inline' is a valid SVG display value — an empty string is dropped by the
+  // style system and would leave the baked-in display="none" attribute in charge.
+  lidOpenEl.setAttribute('display', lidOpen ? 'inline' : 'none');
   document.getElementById('toggleLid').textContent = lidOpen ? 'Close Lid' : 'Open Lid';
 });
 </script>

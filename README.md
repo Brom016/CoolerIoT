@@ -161,7 +161,7 @@ The `control()` function in the sketch is the heart that transfers unchanged: hy
 | Symptom | Fix |
 |---|---|
 | OLED blank | check I2C wiring (SDA 21 / SCL 22); address must be 0x3C |
-| Temps read −127 (dashboard shows `ERR`) | probe did not answer: check both DS18B20 DATA wires → **D4**, VCC → 3V3, GND → GND, and the **4.7 kΩ pull-up** (`rpull`) between D4 and 3V3. Startup now prints `[DS18B20] N probe(s) found` — if it says 0, the bus is the problem |
+| Temps read −127 (dashboard shows `ERR`) | probe did not answer: check both DS18B20 DATA wires → **D4**, VCC → 3V3, GND → GND, and the **4.7 kΩ pull-up** (`rpull`) between D4 and 3V3. Startup now prints `[DS18B20] N probe(s) found` — if it says 0, the bus is the problem. After ~5 s of dead bus the box enters `SENSOR-FLT` (red LED + beeper) and parks the compressor; it recovers by itself once the bus answers |
 | DHT reads `nan` for the first seconds | normal — wait one read cycle (~2 s) |
 | Compile error on `ledcSetup` | your core is ESP32 v3; the sketch auto-detects, but re-check the `#if` block |
 | Libraries not found | install all seven from STEP 3 |
@@ -202,7 +202,7 @@ talks to the same broker from your browser over WebSocket.
 1. Start the Wokwi simulation (STEP 4). In the serial log wait for `[MQTT] connected` and the `MQTT LINK UP` event.
 2. Double-click `wokwi/dashboard.html` — it opens in your browser, no server needed.
 3. Make sure the **topic prefix** matches `TOPIC_BASE`, press **Connect**.
-4. Cards fill with live values within ~2 s: chart, state badge, PCM reserve, battery, event log, hash chain, and a location map fed by the GNSS fix (a simulated coastal track while `GPS_SIM=1`).
+4. Cards fill with live values within ~2 s: chart, state badge, PCM reserve, battery, event log, hash chain, and a location map fed by the GNSS fix (a looping Semarang → Kudus road track while `GPS_SIM=1`; each delivery restarts at the port).
 
 **Remote controls on the dashboard:**
 
@@ -211,6 +211,7 @@ talks to the same broker from your browser over WebSocket.
 - **Mute buzzer** — acknowledged-and-logged; the alarm state itself is unchanged.
 - **Custody handover** — logs the event and prints the receipt hash.
 - **Refresh now** — asks the box to publish telemetry immediately.
+- **Simulator inputs** — four sliders (T1, T2, ambient, battery) plus **Mains** / **Lid** toggle buttons. Every change pins the input over MQTT, same as the scenario buttons; S1 · Normal clears every pin.
 
 **Scenario runner (S1–S8) — drive the demos from the browser:**
 
@@ -224,10 +225,14 @@ answer `REMOTE CMD UNKNOWN`.
 | Button | Sends | Expected result |
 |---|---|---|
 | S1 · Normal | `{"cmd":"sim","reset":1}` | all pins cleared, inputs read the Wokwi parts again, box settles to OK |
-| S2 · Hysteresis | `{"cmd":"sim","t1":9,"t2":6}` | compressor starts (T1 9 > ON 7); press S1 to cool back — it stops only below 5 |
+| S2 · Hysteresis | `{"cmd":"sim","t1":7.8,"t2":5.8}` — each press steps 7.8 → 5.8 → 4.2 °C | 1st: green LED ON (T1 > ON 7) · 2nd: still ON inside the band (hysteresis lag) · 3rd: OFF below 5. (9 °C was retired — it tripped the 8 °C excursion rule) |
 | S3 · Power loss | `{"cmd":"sim","mains":0}` | `PASSIVE-HOLD`, compressor LED off, PCM % drains, HOLD counts down |
 | S4 · Door open | `{"cmd":"sim","door":1}` (toggles) | `EVENT: DOOR OPEN`, PCM drain ×1.3 while open; click again to close |
 | S5 · Excursion | `{"cmd":"sim","amb":42,"t1":10,"t2":8.5}` | red LED + beeping, EXC climbs to 15 story-min → `QUARANTINE` latch |
+
+The box also protects itself against a dead sensor bus: ~5 s of both probes reading −127
+raises `SENSOR-FLT` (red LED + beeper, compressor parked, PCM holds passively) and it
+clears by itself once the bus answers. A dashboard pin counts as a live sensor.
 | S6 · Battery low | `{"cmd":"sim","batt":10.8}` (cycles 10.8 → 10.3 → 12.4 V) | `BATT-LOW`, compressor shed below 10.5 V, then recovery |
 | S7 · Handover | `{"cmd":"handover"}` | `CUSTODY HANDOVER` record + receipt hash |
 | S8 · Tamper test | — (flashes the Hash chain card) | edit an old `REC` line in the serial log → every later fingerprint breaks |

@@ -343,6 +343,8 @@ input:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1
   40%      { box-shadow: 0 0 0 3px var(--color-primary); }
 }
 .chain.flash { animation: chainflash 1.1s ease 3; }
+.sp.sim { margin-bottom: 6px; }
+.sp.sim input[type=range] { width: auto; flex: 1; min-width: 0; padding: 0; border: none; background: transparent; height: 24px; accent-color: var(--color-primary); }
 .sp { display: flex; gap: var(--space-xs); align-items: center; }
 .sp input { width: 72px; padding: 8px 10px; height: 36px; }
 .sp .u { color: var(--color-mute); font-size: 13px; }
@@ -599,6 +601,18 @@ input:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1
       </div>
       <div class="note">Each button pins the simulated inputs over MQTT. S8 flashes the hash chain: edit an old REC line in the serial log and every later fingerprint stops matching.</div>
     </div>
+    <div class="grp">
+      <div class="lbl">Simulator inputs</div>
+      <div class="sp sim"><input id="simT1" type="range" min="-20" max="45" step="0.5" value="4.5" disabled><span class="u" id="simT1v">T1 4.5 °C</span></div>
+      <div class="sp sim"><input id="simT2" type="range" min="-20" max="45" step="0.5" value="4.8" disabled><span class="u" id="simT2v">T2 4.8 °C</span></div>
+      <div class="sp sim"><input id="simAmb" type="range" min="10" max="45" step="0.5" value="40" disabled><span class="u" id="simAmbv">AMB 40.0 °C</span></div>
+      <div class="sp sim"><input id="simBatt" type="range" min="9" max="12.8" step="0.1" value="12.4" disabled><span class="u" id="simBattv">BAT 12.4 V</span></div>
+      <div class="btnrow" style="margin-top:8px">
+        <button class="btn sm" id="tglMains" disabled>Mains · OK</button>
+        <button class="btn sm" id="tglLid" disabled>Lid · closed</button>
+      </div>
+      <div class="note">Sliders pin a value live over MQTT; the buttons flip the mains switch / lid. S1 · Normal clears every pin.</div>
+    </div>
   </section>
 
   <section class="card events"><h2>Event log</h2>
@@ -675,9 +689,12 @@ const chainList = [];
 const MAX_POINTS = 180;
 
 // scenario runner state (S1-S8)
-let doorPinned = false;                   // S4 lid toggle, tracked dashboard-side
+let doorPinned = false;                   // lid pin, shared by S4 and the Lid button
+let mainsPinned = false;                  // mains pin, shared by S3 and the Mains button
 const BATT_STEPS = [10.8, 10.3, 12.4];    // S6: low -> critical -> back to normal
 let battStep = 0;
+const HYST_STEPS = [7.8, 5.8, 4.2];       // S2: ON above 7 -> stays on (lag) -> OFF below 5
+let hystStep = 0;
 
 // Planned route waypoints — mirrors GPS_ROUTE[] in sketch.ino
 // Simongan Port Semarang → Kudus via Pantura
@@ -784,9 +801,16 @@ function initMap() {
 
   // Fit map to planned route bounds
   map.fitBounds(plannedLine.getBounds(), { padding: [32, 32] });
+  // Leaflet measured its size while fonts / liquid-glass were still settling — re-measure
+  setTimeout(() => map.invalidateSize(), 350);
+  window.addEventListener('resize', () => map.invalidateSize());
 }
 
 function updateMap(lat, lon, kph, sat) {
+  const last = track[track.length - 1];
+  if (last && (Math.abs(lat - last[0]) + Math.abs(lon - last[1])) > 0.02) {
+    track.length = 0;                      // shipment restarted at the port: fresh track line
+  }
   track.push([lat, lon]);
   if (track.length > 500) track.shift();
   trackLine.setLatLngs(track);
@@ -806,7 +830,7 @@ function updateMap(lat, lon, kph, sat) {
 /* ── connection ───────────────────────────────────────────────────────── */
 function setConn(mode, detail) {
   const dot = $('connDot'), txt = $('connText'), btn = $('btnConn');
-  document.querySelectorAll('.btn.mode,.btn.scn,#btnSp,#btnMute,#btnHand,#btnPing')
+  document.querySelectorAll('.btn.mode,.btn.scn,#btnSp,#btnMute,#btnHand,#btnPing,#simT1,#simT2,#simAmb,#simBatt,#tglMains,#tglLid')
     .forEach(b => b.disabled = (mode !== 'online'));
   if      (mode === 'online')      { dot.className = 'dot on';   txt.textContent = 'MQTT connected'; btn.textContent = 'Disconnect'; }
   else if (mode === 'connecting')  { dot.className = 'dot warn'; txt.textContent = 'connecting…';   btn.textContent = 'Connect'; }
@@ -858,7 +882,8 @@ function onMessage(topic, msg) {
 }
 
 const BADGE_CLASS = { OK:'ok', 'DOOR-OPEN':'warn', 'BATT-LOW':'warn',
-                      'PASSIVE-HOLD':'info', EXCURSION:'bad', QUARANTINE:'crit', OFFLINE:'' };
+                      'PASSIVE-HOLD':'info', EXCURSION:'bad', QUARANTINE:'crit',
+                      'SENSOR-FLT':'crit', OFFLINE:'' };
 
 function onState(d) {
   $('t1').textContent   = d.t1 <= -100 ? 'ERR' : d.t1.toFixed(1);
@@ -967,14 +992,35 @@ function initButtons() {
   $('btnHand').addEventListener('click', () => cmd({ cmd: 'handover' }));
   $('btnPing').addEventListener('click',  () => cmd({ cmd: 'ping' }));
 
-  // ── scenario runner (S1-S8) ──
-  $('scnS1').addEventListener('click', () => cmd({ cmd: 'sim', reset: 1 }));
-  $('scnS2').addEventListener('click', () => cmd({ cmd: 'sim', t1: 9, t2: 6 }));
-  $('scnS3').addEventListener('click', () => cmd({ cmd: 'sim', mains: 0 }));
+  // ── scenario runner (S1-S8) + simulator inputs ──
+  const setLidUi = () => {
+    $('tglLid').textContent = doorPinned ? 'Lid · OPEN' : 'Lid · closed';
+    $('scnS4').textContent  = doorPinned ? 'S4 · Close lid' : 'S4 · Door open';
+  };
+
+  $('scnS1').addEventListener('click', () => {
+    cmd({ cmd: 'sim', reset: 1 });
+    hystStep = 0;        $('scnS2').textContent = 'S2 · Hysteresis';
+    battStep = 0;        $('scnS6').textContent = 'S6 · Battery low';
+    mainsPinned = false; $('tglMains').textContent = 'Mains · OK';
+    doorPinned = false;  setLidUi();
+  });
+  $('scnS2').addEventListener('click', () => {
+    const v = HYST_STEPS[hystStep];
+    cmd({ cmd: 'sim', t1: v, t2: v - 2 });
+    $('scnS2').textContent = 'S2 · ' + (hystStep === 0 ? 'Warm ' : hystStep === 1 ? 'Hold ' : 'Cool ')
+                           + v.toFixed(1) + ' °C';
+    hystStep = (hystStep + 1) % HYST_STEPS.length;
+  });
+  $('scnS3').addEventListener('click', () => {
+    mainsPinned = true;
+    cmd({ cmd: 'sim', mains: 0 });
+    $('tglMains').textContent = 'Mains · LOST';
+  });
   $('scnS4').addEventListener('click', () => {
     doorPinned = !doorPinned;
     cmd({ cmd: 'sim', door: doorPinned ? 1 : 0 });
-    $('scnS4').textContent = doorPinned ? 'S4 · Close lid' : 'S4 · Door open';
+    setLidUi();
   });
   $('scnS5').addEventListener('click', () => cmd({ cmd: 'sim', amb: 42, t1: 10, t2: 8.5 }));
   $('scnS6').addEventListener('click', () => {
@@ -989,6 +1035,32 @@ function initButtons() {
     void card.offsetWidth;                 // restart the animation
     card.classList.add('flash');
     setTimeout(() => card.classList.remove('flash'), 3500);
+  });
+
+  // raw simulator inputs: sliders pin live values, buttons flip the switches
+  const bindRange = (id, key, fmt) => {
+    let t = null;
+    $(id).addEventListener('input', () => {
+      const v = parseFloat($(id).value);
+      $(id + 'v').textContent = fmt(v);
+      clearTimeout(t);
+      t = setTimeout(() => cmd({ cmd: 'sim', [key]: v }), 250);
+    });
+  };
+  bindRange('simT1',   't1',   v => 'T1 ' + v.toFixed(1) + ' °C');
+  bindRange('simT2',   't2',   v => 'T2 ' + v.toFixed(1) + ' °C');
+  bindRange('simAmb',  'amb',  v => 'AMB ' + v.toFixed(1) + ' °C');
+  bindRange('simBatt', 'batt', v => 'BAT ' + v.toFixed(1) + ' V');
+
+  $('tglMains').addEventListener('click', () => {
+    mainsPinned = !mainsPinned;
+    cmd({ cmd: 'sim', mains: mainsPinned ? 0 : 1 });
+    $('tglMains').textContent = mainsPinned ? 'Mains · LOST' : 'Mains · OK';
+  });
+  $('tglLid').addEventListener('click', () => {
+    doorPinned = !doorPinned;
+    cmd({ cmd: 'sim', door: doorPinned ? 1 : 0 });
+    setLidUi();
   });
 }
 

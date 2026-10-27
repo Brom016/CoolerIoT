@@ -135,8 +135,7 @@ static const WP GPS_ROUTE[] = {
   { -6.9105f, 110.8090f },
 };
 static const int GPS_ROUTE_LEN = (int)(sizeof(GPS_ROUTE) / sizeof(GPS_ROUTE[0]));
-static int  gWpIdx   = 0;     // current waypoint index
-static int  gWpDir   = 1;     // +1 forward, -1 reverse (ping-pong for continuous sim)
+static int  gWpIdx   = 0;     // current waypoint index (loops: port -> Kudus -> port)
 float   gLat  = GPS_ROUTE[0].lat;
 float   gLon  = GPS_ROUTE[0].lon;
 float   gKph  = 30.0f;
@@ -175,6 +174,8 @@ Btn btnMute, btnHand;
 
 bool prevDoor = false;
 bool prevBattLow = false;
+bool    sensorFault = false;    // both payload probes silent (-127)
+uint8_t faultReads = 0;         // consecutive failed conversions (debounce)
 unsigned long lastLoopMs = 0, lastOledMs = 0, lastLogMs = 0;
 
 // ---------------- Dashboard scenario pins (S1-S8) ----------------
@@ -227,6 +228,7 @@ float tMax() { return fmaxf(t1, t2); }
 
 const char* stateName() {
   if (quarantined)         return "QUARANTINE";
+  if (sensorFault)         return "SENSOR-FLT";
   if (tMax() > TEMP_LIMIT) return "EXCURSION";
   if (!mainsOK)            return "PASSIVE-HOLD";
   if (battV < BATT_LOW_V)  return "BATT-LOW";
@@ -282,10 +284,14 @@ void publishTelemetry() {
   char tbuf[8];
   storyClock(tbuf, sizeof(tbuf));
 #if GPS_SIM
-  // Advance one waypoint along the road route (ping-pong at both ends)
-  gWpIdx += gWpDir;
-  if (gWpIdx >= GPS_ROUTE_LEN) { gWpIdx = GPS_ROUTE_LEN - 2; gWpDir = -1; }
-  if (gWpIdx < 0)              { gWpIdx = 1;                  gWpDir =  1; }
+  // Advance one waypoint along the road route; at Kudus the shipment is
+  // complete and the next one starts at the port (loop, no ping-pong).
+  gWpIdx++;
+  if (gWpIdx >= GPS_ROUTE_LEN) {
+    gWpIdx = 0;
+    logEvent("DELIVERY COMPLETE",
+             "Box reached Puskesmas Kudus. The custody chain keeps the full history; a fresh shipment starts at Simongan port.");
+  }
   gLat = GPS_ROUTE[gWpIdx].lat;
   gLon = GPS_ROUTE[gWpIdx].lon;
   // vary speed slightly (25–35 km/h) to look realistic
@@ -572,7 +578,8 @@ void control(float dtStorySec) {
   // --- compressor: dashboard mode may force, safety limits still apply ---
   bool battOK  = battV >= BATT_CRIT_V;
   bool powerOK = mainsOK && battOK;
-  if (compMode == MODE_OFF)     compOn = false;
+  if (sensorFault)              compOn = false;        // blind: PCM holds passively, no force-on
+  else if (compMode == MODE_OFF) compOn = false;
   else if (compMode == MODE_ON) compOn = powerOK;      // cannot force without power
   else {
     if (!powerOK)               compOn = false;        // AUTO hysteresis
@@ -611,12 +618,12 @@ void control(float dtStorySec) {
     logEvent("QUARANTINE FLAGGED",
              "Payload spent more than 15 story-minutes above 8C. The batch needs a product-specific QA disposition before it may be used.");
   }
-  digitalWrite(PIN_LED_ALM, (tmax > TEMP_LIMIT || quarantined) ? HIGH : LOW);
+  digitalWrite(PIN_LED_ALM, (tmax > TEMP_LIMIT || quarantined || sensorFault) ? HIGH : LOW);
 }
 
 // ---------------- Local alarm (buzzer pattern, non-blocking) ----------------
 void beepTask() {
-  bool alarm = (tMax() > TEMP_LIMIT) || quarantined ||
+  bool alarm = (tMax() > TEMP_LIMIT) || quarantined || sensorFault ||
                (battV < BATT_CRIT_V) || (!mainsOK && pcmSoc < 15.0f);
   if (!alarm) { muted = false; buzzerTone(0); return; }
   if (muted)  { buzzerTone(0); return; }
@@ -817,6 +824,28 @@ void loop() {
                      "Check both DATA wires -> D4 and the 4.7k pull-up (rpull) between D4 and 3V3.");
     } else if (t1 != DEVICE_DISCONNECTED_C) {
       warnedDisc = false;
+    }
+    // --- sensor-fault watchdog: a dead bus must NOT read as "freezing cold" ---
+    // -127 would otherwise keep the hysteresis permanently satisfied and the
+    // compressor parked while everything LOOKS fine. Make the failure loud.
+    if (isnan(simT1) && isnan(simT2)) {            // a dashboard pin counts as a live sensor
+      bool bothDead = (t1 == DEVICE_DISCONNECTED_C) && (t2 == DEVICE_DISCONNECTED_C);
+      faultReads = bothDead ? (uint8_t)(faultReads + 1) : 0;
+      bool fault = (faultReads >= 3);              // ~5 s of dead bus, not a one-off hiccup
+      if (fault != sensorFault) {
+        sensorFault = fault;
+        if (fault)
+          logEvent("SENSOR FAULT",
+                   "Both payload probes stopped answering (-127). The compressor is parked and the PCM holds the temperature passively while the bus is dead.");
+        else
+          logEvent("SENSOR RECOVERED",
+                   "Payload probes answer again - compressor control resumes on the next evaluation.");
+      }
+    } else if (sensorFault) {
+      faultReads = 0;
+      sensorFault = false;
+      logEvent("SENSOR RECOVERED",
+               "The dashboard is pinning the payload temperature - control continues on the pinned values.");
     }
     if (!isnan(simT1)) t1 = simT1;                 // scenario pins win
     if (!isnan(simT2)) t2 = simT2;
