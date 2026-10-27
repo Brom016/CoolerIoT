@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "author": "Smart Cold Chain Design Team",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "wokwi-esp32-devkit-v1", "id": "esp", "top": 30, "left": -60, "attrs": {} },
+    { "type": "wokwi-ds18b20", "id": "temp1", "top": -180, "left": -300, "attrs": { "temp": "4.5" } },
+    { "type": "wokwi-ds18b20", "id": "temp2", "top": -180, "left": -190, "attrs": { "temp": "4.8" } },
+    { "type": "wokwi-resistor", "id": "rpull", "top": -80, "left": -260, "attrs": { "value": "4700" } },
+    { "type": "wokwi-dht22", "id": "dht1", "top": 300, "left": -260, "attrs": { "temp": "40", "humidity": "70" } },
+    { "type": "wokwi-ssd1306", "id": "oled1", "top": -180, "left": 180, "attrs": {} },
+    { "type": "wokwi-buzzer", "id": "bz1", "top": 170, "left": 250, "attrs": { "volume": "0.1" } },
+    { "type": "wokwi-led", "id": "ledY", "top": -60, "left": 320, "attrs": { "color": "yellow" } },
+    { "type": "wokwi-resistor", "id": "rY", "top": -55, "left": 390, "attrs": { "value": "220" } },
+    { "type": "wokwi-led", "id": "ledR", "top": 0, "left": 320, "attrs": { "color": "red" } },
+    { "type": "wokwi-resistor", "id": "rR", "top": 5, "left": 390, "attrs": { "value": "220" } },
+    { "type": "wokwi-led", "id": "ledG", "top": 60, "left": 320, "attrs": { "color": "green" } },
+    { "type": "wokwi-resistor", "id": "rG", "top": 65, "left": 390, "attrs": { "value": "220" } },
+    { "type": "wokwi-pushbutton", "id": "btnDoor", "top": 300, "left": 40, "attrs": { "color": "blue" } },
+    { "type": "wokwi-pushbutton", "id": "btnMute", "top": 300, "left": 150, "attrs": { "color": "yellow" } },
+    { "type": "wokwi-pushbutton", "id": "btnHand", "top": 300, "left": 260, "attrs": { "color": "green" } },
+    { "type": "wokwi-slide-switch", "id": "sw1", "top": -140, "left": 440, "attrs": {} },
+    { "type": "wokwi-potentiometer", "id": "pot1", "top": 40, "left": 470, "attrs": {} }
+  ],
+  "connections": [
+    [ "esp:TX0", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX0", "$serialMonitor:TX", "", [] ],
+
+    [ "temp1:GND", "esp:GND.1", "black", [] ],
+    [ "temp1:VCC", "esp:3V3", "red", [] ],
+    [ "temp1:DATA", "esp:D4", "blue", [] ],
+    [ "temp2:GND", "esp:GND.1", "black", [] ],
+    [ "temp2:VCC", "esp:3V3", "red", [] ],
+    [ "temp2:DATA", "esp:D4", "blue", [] ],
+    [ "rpull:1", "esp:D4", "blue", [] ],
+    [ "rpull:2", "esp:3V3", "red", [] ],
+
+    [ "dht1:VCC", "esp:3V3", "red", [] ],
+    [ "dht1:GND", "esp:GND.1", "black", [] ],
+    [ "dht1:SDA", "esp:D5", "orange", [] ],
+
+    [ "oled1:VCC", "esp:3V3", "red", [] ],
+    [ "oled1:GND", "esp:GND.2", "black", [] ],
+    [ "oled1:SDA", "esp:D21", "green", [] ],
+    [ "oled1:SCL", "esp:D22", "yellow", [] ],
+
+    [ "bz1:2", "esp:D25", "purple", [] ],
+    [ "bz1:1", "esp:GND.2", "black", [] ],
+
+    [ "ledY:A", "esp:D14", "orange", [] ],
+    [ "ledY:C", "rY:1", "orange", [] ],
+    [ "rY:2", "esp:GND.1", "black", [] ],
+    [ "ledR:A", "esp:D27", "red", [] ],
+    [ "ledR:C", "rR:1", "red", [] ],
+    [ "rR:2", "esp:GND.2", "black", [] ],
+    [ "ledG:A", "esp:D26", "green", [] ],
+    [ "ledG:C", "rG:1", "green", [] ],
+    [ "rG:2", "esp:GND.2", "black", [] ],
+
+    [ "btnDoor:1.l", "esp:D32", "blue", [] ],
+    [ "btnDoor:2.l", "esp:GND.1", "black", [] ],
+    [ "btnMute:1.l", "esp:D33", "blue", [] ],
+    [ "btnMute:2.l", "esp:GND.1", "black", [] ],
+    [ "btnHand:1.l", "esp:D13", "blue", [] ],
+    [ "btnHand:2.l", "esp:GND.1", "black", [] ],
+
+    [ "sw1:2", "esp:D23", "green", [] ],
+    [ "sw1:1", "esp:GND.1", "black", [] ],
+    [ "sw1:3", "esp:3V3", "red", [] ],
+
+    [ "pot1:VCC", "esp:3V3", "red", [] ],
+    [ "pot1:GND", "esp:GND.1", "black", [] ],
+    [ "pot1:SIG", "esp:D34", "purple", [] ]
+  ]
+}

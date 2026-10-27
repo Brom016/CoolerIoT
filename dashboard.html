@@ -3,222 +3,484 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Cold Chain Console — MQTT Monitor & Control</title>
+<title>Cold Chain Console — Sender View</title>
 <script src="https://unpkg.com/mqtt@5/dist/mqtt.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
-<!-- SoDoSans is proprietary (DESIGN.md § Known Gaps) — Inter is the documented substitute -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<!-- NouvelR is proprietary — Inter is the documented Renault substitute per DESIGN.md § Note on Font Substitutes -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 <script src="liquid-glass.js"></script>
 <style>
-/* Hallmark · pre-emit critique: P4 H5 E4 S4 R4 V3
- * Hallmark · design.md-managed: "Design System Inspired by Starbucks" (DESIGN.md @ project root)
- * system: canvas #f2f0eb · cards white 12px whisper-shadow · four-tier greens
- *         (#006241 headings · #00754A CTA · #1E3932 bands · #2b5148 decorative)
- *         gold reserved for Rewards ceremony — unused here
- * type:   SoDoSans → Inter (documented substitute) · tracking -0.01em · H1/H2 separated by weight+color
- * rules:  50px pill buttons + scale(0.95) active · no gradients · layered low-alpha shadows
- * glass:  liquid-glass.js on cards + bar — refraction Chromium-only, frosted fallback elsewhere
- * inferred (design gate waived by "ubah tampilannya"): audience = student demo · use = monitor+control · tone = warm café instrument
+/* Hallmark · pre-emit critique: P5 H4 E5 S5 R4 V4
+ * design.md-managed: Renault design system (DESIGN.md @ project root)
+ * system: canvas #fff · surface-dark #000 · primary #ffed00 (Sunlight Yellow)
+ *         ink #000 · mute #666 · hairline #f2f2f2 · hairline-strong #000
+ * type:   NouvelR → Inter · weight 400/600/700 · lineHeight tight (0.95–1.5)
+ * shape:  rounded.none 0px on cards/inputs · rounded.xs 2px on tags/buttons
+ *         NO pill shapes — Renault is square-edged
+ * motion: transform + opacity only · 200ms ease · reduced-motion respected
+ * inferred: audience = student demo · use = monitor+control · tone = utilitarian-automotive
  */
-:root{
-  --canvas:#f2f0eb;          /* Neutral Warm page canvas */
-  --ceramic:#edebe9;         /* meter tracks / soft zones */
-  --card:#ffffff;
-  --green-brand:#006241;     /* Starbucks Green — headings */
-  --green-cta:#00754A;       /* Green Accent — filled CTAs */
-  --green-house:#1E3932;     /* House Green — dark bands */
-  --green-uplift:#2b5148;    /* decorative only */
-  --green-light:#d4e9e2;     /* pale mint wash */
-  --ink:rgba(0,0,0,0.87);
-  --ink-soft:rgba(0,0,0,0.58);
-  --white-soft:rgba(255,255,255,0.70);
-  --red:#c82014;
-  --yellow:#fbbc05;
-  --input-border:#d6dbde;
-  --neutral-cool:#f9f9f9;
-  --hairline:#e7e7e7;
-  --glass-bg:rgba(255,255,255,0.68);
-  --glass-border:rgba(255,255,255,0.85);
-  --glass-highlight:rgba(255,255,255,0.9);
-  --shadow-card:0 0 0.5px rgba(0,0,0,0.14), 0 1px 1px rgba(0,0,0,0.24);
-  --shadow-band:0 1px 3px rgba(0,0,0,0.1), 0 2px 2px rgba(0,0,0,0.06), 0 0 2px rgba(0,0,0,0.07);
-  --radius-card:12px;
-  --radius-pill:50px;
-  --radius-input:4px;
-  --space-1:4px; --space-2:8px; --space-3:16px; --space-4:24px; --space-5:32px; --space-6:40px;
-  --font-sans:Inter,"Helvetica Neue",Helvetica,Arial,sans-serif;
+
+/* ── tokens ─────────────────────────────────────────────────── */
+:root {
+  /* brand */
+  --color-primary:     #ffed00;
+  --color-primary-deep:#e6d200;
+  --color-on-primary:  #000000;
+
+  /* text */
+  --color-ink:         #000000;
+  --color-body:        #222222;
+  --color-mute:        #666666;
+  --color-ash:         #8a8a8a;
+
+  /* surfaces */
+  --color-canvas:      #ffffff;
+  --color-surface-soft:#f7f7f7;
+  --color-surface-dark:#000000;
+  --color-surface-deep:#111111;
+
+  /* borders */
+  --color-hairline:    #f2f2f2;
+  --color-hairline-strong: #000000;
+
+  /* semantic */
+  --color-error:       #be6464;
+  --color-warning:     #f0ad4e;
+  --color-success:     #8dc572;
+
+  /* shape */
+  --radius-none:   0px;
+  --radius-xs:     2px;
+  --radius-sm:     3px;
+  --radius-md:     4px;
+
+  /* spacing (4-pt scale) */
+  --space-xxs: 4px;
+  --space-xs:  8px;
+  --space-sm:  12px;
+  --space-md:  16px;
+  --space-lg:  20px;
+  --space-xl:  24px;
+  --space-xxl: 32px;
+
+  /* typography */
+  --font: Inter, "Helvetica Neue", Helvetica, Arial, sans-serif;
+
+  /* elevation — Renault: almost-flat, hairline-shadow only */
+  --shadow-card: 0 0 0 1px var(--color-hairline);
+  --shadow-band: 0 1px 0 var(--color-hairline-strong);
 }
-*{ box-sizing:border-box; margin:0; }
-html,body{ overflow-x:clip; }
-body{
-  background:var(--canvas); color:var(--ink);
-  font:400 14px/1.5 var(--font-sans);
-  letter-spacing:-0.01em;
+
+/* ── reset ───────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; }
+html, body { overflow-x: clip; }
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font: 400 14px/1.5 var(--font);
+  letter-spacing: 0;
 }
-h1{ font:600 24px/1.2 var(--font-sans); letter-spacing:-0.01em; }
-h2{ font:700 13px/1.5 var(--font-sans); text-transform:uppercase;
-    letter-spacing:0.325px; color:var(--ink-soft); margin-bottom:var(--space-2); }
 
-/* ---------- dark green bands (header / footer) ---------- */
-.band{
-  background:var(--green-house); color:#fff;
-  box-shadow:var(--shadow-band);
-  padding:var(--space-3) var(--space-4);
+/* ── type scale (NouvelR → Inter subset) ─────────────────────── */
+h1 {
+  font: 700 24px/0.95 var(--font);
+  letter-spacing: 0;
 }
-.top{ display:flex; flex-wrap:wrap; gap:var(--space-3); align-items:center;
-      justify-content:space-between; }
-.top .sub{ color:var(--white-soft); font-size:13px; margin-top:2px; }
-.conn{ display:flex; align-items:center; gap:var(--space-2); font-size:13px;
-       color:var(--white-soft); }
-.fresh{ color:var(--white-soft); }
-.fresh.stale{ color:var(--yellow); }
-
-.dot{ width:10px; height:10px; border-radius:50%; background:var(--input-border);
-      display:inline-block; flex:none; }
-.dot.on{ background:var(--green-light); }
-.dot.warn{ background:var(--yellow); }
-.dot.bad{ background:var(--red); }
-.dot.comp-on{ background:var(--green-cta); }
-.band .dot{ box-shadow:0 0 0 2px rgba(255,255,255,0.35); }
-
-/* ---------- shell ---------- */
-.shell{ max-width:1440px; margin:0 auto;
-        padding:var(--space-3) var(--space-4) var(--space-4); }
-
-/* ---------- connection bar (glass) ---------- */
-.bar{ display:flex; flex-wrap:wrap; gap:var(--space-3); align-items:flex-end;
-      background:var(--glass-bg); border:1px solid var(--glass-border);
-      border-radius:var(--radius-card);
-      box-shadow:inset 0 1px 0 var(--glass-highlight), var(--shadow-card);
-      padding:var(--space-3) var(--space-4); margin-bottom:var(--space-3); }
-.bar label{ display:flex; flex-direction:column; gap:4px; font-size:13px;
-            color:var(--ink-soft); }
-.bar label.grow{ flex:1 1 240px; }
-input{
-  background:var(--card); border:1px solid var(--input-border);
-  border-radius:var(--radius-input);
-  color:var(--ink); font:400 14px var(--font-sans); letter-spacing:-0.01em;
-  padding:10px 12px; min-width:0; width:100%;
-  transition:border-color 0.2s ease;
+h2 {
+  font: 700 10px/1.45 var(--font);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-mute);
+  margin-bottom: var(--space-xs);
 }
-input:focus{ border-color:var(--green-cta); }
-input:focus-visible{ outline:2px solid var(--green-brand); outline-offset:1px; }
 
-/* ---------- buttons — full pill, scale(0.95) active ---------- */
-.btn{
-  font:600 14px/1.2 var(--font-sans); letter-spacing:-0.01em;
-  color:var(--green-cta); background:transparent;
-  border:1px solid var(--green-cta); border-radius:var(--radius-pill);
-  padding:7px 16px; cursor:pointer; white-space:nowrap;
-  transition:all 0.2s ease;
+/* ── bands (header / footer) — surface-dark ─────────────────── */
+.band {
+  background: var(--color-surface-dark);
+  color: var(--color-canvas);
+  padding: var(--space-sm) var(--space-xl);
+  border-bottom: 1px solid #222;
 }
-.btn:hover{ background:rgba(0,117,74,0.06); }
-.btn:focus-visible{ outline:2px solid var(--green-brand); outline-offset:2px; }
-.btn:active{ transform:scale(0.95); }
-.btn:disabled{ opacity:0.4; cursor:not-allowed; transform:none; }
-.btn.primary{ background:var(--green-cta); border-color:var(--green-cta); color:#fff; }
-.btn.primary:hover{ background:var(--green-brand); border-color:var(--green-brand); }
-.btn.danger:hover{ border-color:var(--red); color:var(--red); background:rgba(200,32,20,0.05); }
-.btn.mode.is-active{ background:var(--green-cta); border-color:var(--green-cta); color:#fff; }
-
-/* ---------- grid + glass cards ---------- */
-.grid{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--space-3); }
-.card{
-  background:var(--glass-bg); border:1px solid var(--glass-border);
-  border-radius:var(--radius-card);
-  box-shadow:inset 0 1px 0 var(--glass-highlight), var(--shadow-card);
-  padding:var(--space-3) var(--space-4); min-width:0;
+.top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  align-items: center;
+  justify-content: space-between;
 }
-.ro{ grid-column:span 1; }
-.big{ font:600 32px/1.2 var(--font-sans); letter-spacing:-0.01em;
-      font-variant-numeric:tabular-nums; }
-.big small{ font-size:14px; color:var(--ink-soft); font-weight:400; margin-left:4px; }
-.cap{ font-size:13px; color:var(--ink-soft); margin-top:2px; }
-.tag{ display:inline-block; font-size:12px; font-weight:600; letter-spacing:-0.01em;
-      padding:2px 12px; border-radius:var(--radius-pill); margin-top:var(--space-2);
-      border:1px solid var(--input-border); color:var(--ink-soft);
-      background:var(--neutral-cool); }
-.tag.low{ background:rgba(251,188,5,0.22); border-color:transparent; color:var(--ink); }
-.tag.crit{ background:var(--red); border-color:var(--red); color:#fff; }
-
-.state{ grid-column:span 1; }
-.badge{ display:inline-block; font-size:13px; font-weight:600; letter-spacing:-0.01em;
-        padding:4px 14px; border-radius:var(--radius-pill);
-        border:1px solid var(--input-border); color:var(--ink-soft);
-        background:var(--neutral-cool); }
-.badge.ok{   background:var(--green-light); border-color:transparent; color:var(--green-house); }
-.badge.warn{ background:rgba(251,188,5,0.22); border-color:transparent; color:var(--ink); }
-.badge.info{ background:var(--neutral-cool); border-color:var(--input-border); color:var(--ink); }
-.badge.bad{  background:rgba(200,32,20,0.08); border-color:var(--red); color:var(--red); }
-.badge.crit{ background:var(--red); border-color:var(--red); color:#fff; }
-.row{ display:flex; align-items:center; gap:var(--space-2); margin-top:var(--space-3);
-      font-size:13px; color:var(--ink-soft); }
-.row .val{ margin-left:auto; color:var(--ink);
-           font-variant-numeric:tabular-nums; }
-.meter{ flex:1 1 auto; min-width:40px; height:8px; background:var(--ceramic);
-        border-radius:var(--radius-pill); overflow:hidden; }
-.meter i{ display:block; height:100%; width:0%; background:var(--green-cta);
-          transition:width 0.3s cubic-bezier(0.25,0.46,0.45,0.94); }
-.meter i.hot{ background:var(--red); }
-.meter i.warnbg{ background:var(--yellow); }
-
-.power{ grid-column:span 1; }
-.meter.tall{ height:12px; margin-top:var(--space-2); }
-
-.chartcard{ grid-column:span 2; }
-.chartwrap{ position:relative; height:240px; }
-
-.controls{ grid-column:span 1; }
-.grp{ margin-bottom:var(--space-4); }
-.grp .lbl{ font-size:13px; font-weight:700; text-transform:uppercase;
-           letter-spacing:0.325px; color:var(--ink-soft); margin-bottom:var(--space-2); }
-.btnrow{ display:flex; flex-wrap:wrap; gap:var(--space-2); }
-.sp{ display:flex; gap:var(--space-2); align-items:center; }
-.sp input{ width:70px; padding:8px 10px; }
-.sp .u{ color:var(--ink-soft); font-size:13px; }
-.note{ font-size:13px; color:var(--ink-soft); margin-top:var(--space-2); }
-
-.events{ grid-column:span 2; }
-.elist{ max-height:260px; overflow-y:auto; display:flex; flex-direction:column;
-        gap:var(--space-2); }
-.elist .ev{ border-left:2px solid var(--hairline); padding:2px 0 2px 10px; font-size:13px; }
-.elist .ev b{ color:var(--green-cta); font-weight:600; }
-.elist .ev .t{ color:var(--ink-soft); }
-.elist .ev.crit{ border-color:var(--red); }
-.elist .ev.bad{ border-color:var(--red); }
-.elist .ev.warn{ border-color:var(--yellow); }
-.elist .empty{ color:var(--ink-soft); font-size:13px; }
-
-.chain{ grid-column:span 1; }
-.chain ol{ list-style:none; }
-.chain li{ font-size:13px; padding:4px 0; border-bottom:1px dashed var(--hairline);
-           font-variant-numeric:tabular-nums; }
-.chain li b{ color:var(--green-cta); font-weight:600; }
-.chain li .sq{ color:var(--ink-soft); }
-.chain .hint{ font-size:13px; color:var(--ink-soft); margin-top:var(--space-3); }
-
-.foot{ margin-top:var(--space-4); }
-.foot p{ font-size:13px; color:var(--white-soft); }
-
-/* ---------- responsive (DESIGN.md breakpoints: 480 / 1023) ---------- */
-@media (max-width:1023px){
-  .grid{ grid-template-columns:repeat(2,minmax(0,1fr)); }
-  .chartcard,.events{ grid-column:span 2; }
+.top .sub {
+  color: rgba(255,255,255,0.58);
+  font-size: 13px;
+  margin-top: 2px;
 }
-@media (max-width:480px){
-  .grid{ grid-template-columns:minmax(0,1fr); }
-  .chartcard,.events{ grid-column:span 1; }
-  .big{ font-size:28px; }
-  .bar{ flex-direction:column; align-items:stretch; }
+.conn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: 13px;
+  color: rgba(255,255,255,0.58);
 }
-@media (prefers-reduced-motion:reduce){
-  *{ transition:none !important; }
+.fresh { color: rgba(255,255,255,0.58); font-size: 12px; }
+.fresh.stale { color: var(--color-warning); }
+
+/* ── status dot ──────────────────────────────────────────────── */
+.dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #444;
+  display: inline-block; flex: none;
+}
+.dot.on   { background: var(--color-success); }
+.dot.warn { background: var(--color-warning); }
+.dot.bad  { background: var(--color-error); }
+.dot.comp-on { background: var(--color-primary); }
+.band .dot { box-shadow: 0 0 0 2px rgba(255,255,255,0.25); }
+
+/* ── shell ───────────────────────────────────────────────────── */
+.shell {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: var(--space-sm) var(--space-xl) var(--space-xl);
+}
+
+/* ── connection bar ──────────────────────────────────────────── */
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  align-items: flex-end;
+  background: var(--color-surface-soft);
+  border: 1px solid var(--color-hairline-strong);
+  border-radius: var(--radius-none);
+  padding: var(--space-sm) var(--space-md);
+  margin-bottom: var(--space-sm);
+}
+.bar label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--color-mute);
+}
+.bar label.grow { flex: 1 1 240px; }
+
+/* ── inputs ──────────────────────────────────────────────────── */
+input {
+  background: var(--color-canvas);
+  border: 1px solid var(--color-hairline-strong);
+  border-radius: var(--radius-none);
+  color: var(--color-ink);
+  font: 400 14px var(--font);
+  padding: 10px 12px;
+  min-width: 0; width: 100%;
+  transition: border-color 0.2s ease;
+}
+input:focus { border-color: var(--color-ink); outline: none; }
+input:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+
+/* ── buttons (Renault: xs radius, no pill) ───────────────────── */
+.btn {
+  font: 700 14.4px/1.0 var(--font);
+  letter-spacing: 0.144px;
+  color: var(--color-ink);
+  background: var(--color-canvas);
+  border: 1px solid var(--color-ink);
+  border-radius: var(--radius-xs);
+  padding: 14px 24px;
+  height: 48px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.btn:hover { background: var(--color-surface-soft); }
+.btn:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+
+/* primary = yellow fill */
+.btn.primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-on-primary);
+}
+.btn.primary:hover { background: var(--color-primary-deep); border-color: var(--color-primary-deep); }
+
+/* danger outline */
+.btn.danger:hover { border-color: var(--color-error); color: var(--color-error); background: rgba(190,100,100,0.05); }
+
+/* mode active = inverted (secondary-dark) */
+.btn.mode.is-active {
+  background: var(--color-surface-dark);
+  border-color: var(--color-surface-dark);
+  color: var(--color-canvas);
+}
+
+/* small buttons for control groups */
+.btn.sm { height: 36px; padding: 8px 16px; font-size: 13px; }
+
+/* ── grid ────────────────────────────────────────────────────── */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-sm);
+}
+
+/* ── cards (Renault: flat, 1px hairline, no radius) ─────────── */
+.card {
+  background: var(--color-canvas);
+  border: 1px solid var(--color-hairline-strong);
+  border-radius: var(--radius-none);
+  padding: var(--space-sm) var(--space-md);
+  min-width: 0;
+}
+
+/* yellow top-edge accent on card — signature Renault detail */
+.card::before {
+  content: '';
+  display: block;
+  height: 3px;
+  background: var(--color-primary);
+  margin: calc(-1 * var(--space-sm)) calc(-1 * var(--space-md)) var(--space-sm);
+}
+
+.ro    { grid-column: span 1; }
+.state { grid-column: span 1; }
+.power { grid-column: span 1; }
+
+/* ── metric display ──────────────────────────────────────────── */
+.big {
+  font: 700 32px/1.2 var(--font);
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+  margin-top: var(--space-xxs);
+}
+.big small { font-size: 14px; color: var(--color-mute); font-weight: 400; margin-left: 4px; }
+.cap { font-size: 12px; color: var(--color-mute); margin-top: 2px; }
+
+/* ── tag (battery status, small label) ──────────────────────── */
+.tag {
+  display: inline-block;
+  font: 700 10px/1.45 var(--font);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 3px 8px;
+  border-radius: var(--radius-xs);
+  margin-top: var(--space-xs);
+  border: 1px solid var(--color-hairline-strong);
+  color: var(--color-mute);
+  background: var(--color-surface-soft);
+}
+.tag.low  { background: rgba(240,173,78,0.18); border-color: var(--color-warning); color: var(--color-ink); }
+.tag.crit { background: var(--color-error); border-color: var(--color-error); color: #fff; }
+
+/* ── state badge ─────────────────────────────────────────────── */
+.badge {
+  display: inline-block;
+  font: 700 12px/1.0 var(--font);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 6px 14px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--color-hairline-strong);
+  color: var(--color-mute);
+  background: var(--color-surface-soft);
+}
+.badge.ok   { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-on-primary); }
+.badge.warn { background: rgba(240,173,78,0.22); border-color: var(--color-warning); color: var(--color-ink); }
+.badge.info { background: var(--color-surface-soft); border-color: var(--color-hairline-strong); color: var(--color-ink); }
+.badge.bad  { background: rgba(190,100,100,0.08); border-color: var(--color-error); color: var(--color-error); }
+.badge.crit { background: var(--color-error); border-color: var(--color-error); color: #fff; }
+
+/* ── row (label + meter + value) ────────────────────────────── */
+.row {
+  display: flex; align-items: center; gap: var(--space-xs);
+  margin-top: var(--space-sm);
+  font-size: 13px; color: var(--color-mute);
+}
+.row .val { margin-left: auto; color: var(--color-ink); font-variant-numeric: tabular-nums; font-weight: 600; }
+
+/* ── meters ──────────────────────────────────────────────────── */
+.meter {
+  flex: 1 1 auto; min-width: 40px; height: 6px;
+  background: var(--color-surface-soft);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-none);
+  overflow: hidden;
+}
+.meter i {
+  display: block; height: 100%; width: 0%;
+  background: var(--color-ink);
+  transition: width 0.3s ease;
+}
+.meter i.hot    { background: var(--color-error); }
+.meter i.warnbg { background: var(--color-warning); }
+.meter.tall { height: 10px; margin-top: var(--space-xs); }
+
+/* ── chart card ──────────────────────────────────────────────── */
+.chartcard { grid-column: span 2; }
+.chartwrap { position: relative; height: 240px; }
+
+/* ── controls ────────────────────────────────────────────────── */
+.controls { grid-column: span 1; }
+.grp { margin-bottom: var(--space-lg); }
+.grp .lbl {
+  font: 700 10px/1.45 var(--font);
+  text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--color-mute); margin-bottom: var(--space-xs);
+}
+.btnrow { display: flex; flex-wrap: wrap; gap: var(--space-xs); }
+.sp { display: flex; gap: var(--space-xs); align-items: center; }
+.sp input { width: 72px; padding: 8px 10px; height: 36px; }
+.sp .u { color: var(--color-mute); font-size: 13px; }
+.note { font-size: 12px; color: var(--color-mute); margin-top: var(--space-xs); }
+
+/* ── event log ───────────────────────────────────────────────── */
+.events { grid-column: span 2; }
+.elist {
+  max-height: 260px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: var(--space-xs);
+}
+.elist .ev {
+  border-left: 3px solid var(--color-hairline-strong);
+  padding: 2px 0 2px 10px; font-size: 13px;
+}
+.elist .ev b { color: var(--color-ink); font-weight: 700; }
+.elist .ev .t { color: var(--color-mute); }
+.elist .ev.crit { border-color: var(--color-error); }
+.elist .ev.bad  { border-color: var(--color-error); }
+.elist .ev.warn { border-color: var(--color-warning); }
+.elist .empty   { color: var(--color-mute); font-size: 13px; }
+
+/* ── hash chain ──────────────────────────────────────────────── */
+.chain { grid-column: span 1; }
+.chain ol { list-style: none; }
+.chain li {
+  font-size: 13px; padding: 4px 0;
+  border-bottom: 1px solid var(--color-hairline);
+  font-variant-numeric: tabular-nums;
+}
+.chain li b  { color: var(--color-ink); font-weight: 700; }
+.chain li .sq { color: var(--color-mute); }
+.chain .hint { font-size: 12px; color: var(--color-mute); margin-top: var(--space-sm); }
+
+/* ── auth gate ───────────────────────────────────────────────── */
+#auth-gate {
+  position: fixed; inset: 0; z-index: 9999;
+  background: var(--color-surface-dark);
+  display: flex; align-items: center; justify-content: center;
+  flex-direction: column; gap: var(--space-md);
+}
+#auth-gate .logo {
+  font: 700 10px/1.45 var(--font);
+  text-transform: uppercase; letter-spacing: 1px;
+  color: var(--color-primary); margin-bottom: var(--space-xs);
+}
+#auth-gate h2 {
+  font: 700 20px/1.0 var(--font);
+  color: var(--color-canvas);
+  text-transform: none; letter-spacing: 0;
+  margin-bottom: 0;
+}
+#auth-gate p {
+  font-size: 13px; color: rgba(255,255,255,0.5);
+  max-width: 320px; text-align: center; line-height: 1.5;
+}
+#auth-gate .field {
+  display: flex; flex-direction: column; gap: 6px;
+  width: 280px;
+}
+#auth-gate .field label {
+  font: 700 10px/1.45 var(--font);
+  text-transform: uppercase; letter-spacing: 0.5px;
+  color: rgba(255,255,255,0.45);
+}
+#auth-gate input {
+  background: #1a1a1a;
+  border-color: #333;
+  color: var(--color-canvas);
+}
+#auth-gate input:focus { border-color: var(--color-primary); }
+#auth-gate .err {
+  font-size: 12px; color: var(--color-error);
+  min-height: 16px;
+}
+
+/* ── map improvements ────────────────────────────────────────── */
+.mapcard { grid-column: span 4; }
+.mapwrap { height: 320px; overflow: hidden; position: relative; z-index: 0; }
+.map-meta {
+  display: flex; flex-wrap: wrap; gap: var(--space-md);
+  margin-top: var(--space-xs); font-size: 12px;
+}
+.map-meta span { color: var(--color-mute); }
+.map-meta strong { color: var(--color-ink); font-weight: 700; }
+.map-legend {
+  display: flex; align-items: center; gap: var(--space-sm);
+  margin-top: var(--space-xs);
+}
+.map-legend .li {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--color-mute);
+}
+.map-legend .li i {
+  display: block; width: 24px; height: 3px;
+  background: var(--color-primary);
+}
+.map-legend .li i.planned {
+  background: transparent;
+  border-top: 2px dashed #888;
+}
+.map-legend .li i.track {
+  background: var(--color-ink);
+}
+
+/* ── footer ──────────────────────────────────────────────────── */
+.foot { margin-top: var(--space-xl); border-top: 1px solid #222; }
+.foot p { font-size: 12px; color: rgba(255,255,255,0.45); }
+
+/* ── responsive (DESIGN.md breakpoints: 480 / 1023) ─────────── */
+@media (max-width: 1023px) {
+  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .chartcard, .events { grid-column: span 2; }
+  .mapcard { grid-column: span 2; }
+}
+@media (max-width: 480px) {
+  .grid { grid-template-columns: minmax(0, 1fr); }
+  .chartcard, .events { grid-column: span 1; }
+  .mapcard { grid-column: span 1; }
+  .big { font-size: 28px; }
+  .bar { flex-direction: column; align-items: stretch; }
+  .shell { padding: var(--space-xs) var(--space-sm) var(--space-sm); }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
 }
 </style>
 </head>
 <body>
+
+<!-- ── sender-only auth gate ─────────────────────────────────── -->
+<div id="auth-gate">
+  <div class="logo">Cold Chain System · Sender Access</div>
+  <h2>Verifikasi Identitas</h2>
+  <p>Dashboard ini hanya untuk pengirim yang terotorisasi. Masukkan kode akses pengiriman.</p>
+  <div class="field">
+    <label>Kode Akses Pengirim</label>
+    <input id="authInput" type="password" placeholder="Masukkan kode akses…" autocomplete="off">
+  </div>
+  <div class="err" id="authErr"></div>
+  <button class="btn primary" id="authBtn">Masuk →</button>
+  <p style="font-size:11px;color:rgba(255,255,255,0.25);margin-top:8px">
+    Demo: kode = <code style="color:rgba(255,255,255,0.4)">coldchain2025</code>
+  </p>
+</div>
 
 <header class="band top">
   <div>
@@ -290,9 +552,9 @@ input:focus-visible{ outline:2px solid var(--green-brand); outline-offset:1px; }
     <div class="grp">
       <div class="lbl">Compressor mode</div>
       <div class="btnrow">
-        <button class="btn mode" data-mode="auto" disabled>Auto</button>
-        <button class="btn mode" data-mode="on" disabled>Force on</button>
-        <button class="btn mode danger" data-mode="off" disabled>Force off</button>
+        <button class="btn sm mode" data-mode="auto" disabled>Auto</button>
+        <button class="btn sm mode" data-mode="on" disabled>Force on</button>
+        <button class="btn sm mode danger" data-mode="off" disabled>Force off</button>
       </div>
       <div class="note">Force-on is blocked by the box itself when mains or battery is down.</div>
     </div>
@@ -305,15 +567,15 @@ input:focus-visible{ outline:2px solid var(--green-brand); outline-offset:1px; }
         <span class="u">OFF ≤ °C</span>
       </div>
       <div class="btnrow" style="margin-top:8px">
-        <button class="btn" id="btnSp" disabled>Apply setpoints</button>
+        <button class="btn sm" id="btnSp" disabled>Apply setpoints</button>
       </div>
     </div>
     <div class="grp">
       <div class="lbl">Actions</div>
       <div class="btnrow">
-        <button class="btn" id="btnMute" disabled>Mute buzzer</button>
-        <button class="btn" id="btnHand" disabled>Custody handover</button>
-        <button class="btn" id="btnPing" disabled>Refresh now</button>
+        <button class="btn sm" id="btnMute" disabled>Mute buzzer</button>
+        <button class="btn sm" id="btnHand" disabled>Custody handover</button>
+        <button class="btn sm" id="btnPing" disabled>Refresh now</button>
       </div>
     </div>
   </section>
@@ -325,6 +587,21 @@ input:focus-visible{ outline:2px solid var(--green-brand); outline-offset:1px; }
   <section class="card chain"><h2>Hash chain</h2>
     <ol id="chain"><li class="sq">waiting for telemetry…</li></ol>
     <p class="hint">Each record's fingerprint includes the previous one — editing any old record breaks every link after it (tamper-evident).</p>
+  </section>
+
+  <section class="card mapcard"><h2>Lokasi · Sender View</h2>
+    <div id="map" class="mapwrap"></div>
+    <div class="map-meta">
+      <span>Posisi: <strong id="gpsCoord">—</strong></span>
+      <span>Kecepatan: <strong id="gpsKph">—</strong></span>
+      <span>Satelit: <strong id="gpsSat">—</strong></span>
+      <span>Status: <strong id="gpsStatus">menunggu fix…</strong></span>
+    </div>
+    <div class="map-legend">
+      <div class="li"><i class="planned"></i>Rute rencana</div>
+      <div class="li"><i class="track"></i>Track aktual</div>
+      <div class="li"><i></i>Posisi kotak</div>
+    </div>
   </section>
 
 </main>
@@ -340,7 +617,35 @@ input:focus-visible{ outline:2px solid var(--green-brand); outline-offset:1px; }
 "use strict";
 const $ = id => document.getElementById(id);
 
-/* ---------- state ---------- */
+/* ── sender-only auth gate ───────────────────────────────────── */
+// ponytail: demo uses a static passphrase — real deploy uses a server-issued token.
+//           Upgrade path: POST /auth -> JWT stored in sessionStorage, validated on every MQTT connect.
+const AUTH_KEY = "coldchain2025";
+const SESSION_KEY = "cc_auth";
+
+function checkAuth() {
+  if (sessionStorage.getItem(SESSION_KEY) === "1") {
+    $('auth-gate').style.display = 'none';
+    initApp();
+  }
+}
+
+$('authBtn').addEventListener('click', doAuth);
+$('authInput').addEventListener('keydown', e => { if (e.key === 'Enter') doAuth(); });
+
+function doAuth() {
+  if ($('authInput').value.trim() === AUTH_KEY) {
+    sessionStorage.setItem(SESSION_KEY, '1');
+    $('auth-gate').style.display = 'none';
+    initApp();
+  } else {
+    $('authErr').textContent = 'Kode salah. Coba lagi.';
+    $('authInput').value = '';
+    $('authInput').focus();
+  }
+}
+
+/* ── state ───────────────────────────────────────────────────────── */
 const DEFAULT_URL  = "wss://broker.hivemq.com:8884/mqtt";
 const DEFAULT_BASE = "coldchain/box001";
 let client = null, base = DEFAULT_BASE, isConnected = false;
@@ -348,125 +653,225 @@ let lastMsgAt = 0;
 const chainList = [];
 const MAX_POINTS = 180;
 
-/* ---------- chart (colors mirror the DESIGN.md tokens) ---------- */
-const chart = new Chart($("chart"), {
-  type: "line",
+// Planned route waypoints — mirrors GPS_ROUTE[] in sketch.ino
+// Simongan Port Semarang → Kudus via Pantura
+const PLANNED_ROUTE = [
+  [-6.9550, 110.4240], [-6.9521, 110.4268], [-6.9493, 110.4312],
+  [-6.9470, 110.4375], [-6.9452, 110.4445], [-6.9438, 110.4530],
+  [-6.9432, 110.4620], [-6.9429, 110.4740], [-6.9424, 110.4880],
+  [-6.9418, 110.5010], [-6.9408, 110.5180], [-6.9392, 110.5370],
+  [-6.9380, 110.5530], [-6.9368, 110.5710], [-6.9352, 110.5940],
+  [-6.9330, 110.6190], [-6.9305, 110.6450], [-6.9278, 110.6720],
+  [-6.9248, 110.7000], [-6.9215, 110.7280], [-6.9180, 110.7540],
+  [-6.9150, 110.7750], [-6.9125, 110.7930], [-6.9105, 110.8090],
+];
+
+const ORIGIN      = PLANNED_ROUTE[0];
+const DESTINATION = PLANNED_ROUTE[PLANNED_ROUTE.length - 1];
+
+/* ── chart ─────────────────────────────────────────────────────────── */
+const chart = new Chart($('chart'), {
+  type: 'line',
   data: { labels: [], datasets: [
-    { label: "T1 top",  data: [], borderColor: "#00754A", borderWidth: 2, pointRadius: 0, tension: .25 },
-    { label: "T2 bot",  data: [], borderColor: "#1E3932", borderWidth: 2, pointRadius: 0, tension: .25 },
-    { label: "Ambient", data: [], borderColor: "#fbbc05", borderWidth: 1.5, borderDash: [6,4], pointRadius: 0, tension: .2 },
-    { label: "8 °C limit", data: [], borderColor: "#c82014", borderWidth: 1, borderDash: [2,4], pointRadius: 0 },
-    { label: "2 °C limit", data: [], borderColor: "rgba(0,0,0,0.4)", borderWidth: 1, borderDash: [2,4], pointRadius: 0 }
+    { label: 'T1 top',     data: [], borderColor: '#000000', borderWidth: 2, pointRadius: 0, tension: .25 },
+    { label: 'T2 bot',     data: [], borderColor: '#666666', borderWidth: 2, pointRadius: 0, tension: .25 },
+    { label: 'Ambient',    data: [], borderColor: '#f0ad4e', borderWidth: 1.5, borderDash: [6,4], pointRadius: 0, tension: .2 },
+    { label: '8 °C limit', data: [], borderColor: '#be6464', borderWidth: 1, borderDash: [2,4], pointRadius: 0 },
+    { label: '2 °C limit', data: [], borderColor: 'rgba(0,0,0,0.3)', borderWidth: 1, borderDash: [2,4], pointRadius: 0 }
   ]},
   options: {
     animation: false, responsive: true, maintainAspectRatio: false,
-    interaction: { mode: "nearest", intersect: false },
+    interaction: { mode: 'nearest', intersect: false },
     scales: {
-      x: { ticks: { color: "rgba(0,0,0,0.58)", maxTicksLimit: 8,
-                    font: { family: "Inter, Arial, sans-serif", size: 10 } },
-           grid: { color: "rgba(0,0,0,0.06)" } },
+      x: { ticks: { color: '#666666', maxTicksLimit: 8,
+                    font: { family: 'Inter, Arial, sans-serif', size: 10 } },
+           grid: { color: 'rgba(0,0,0,0.06)' } },
       y: { suggestedMin: 0, suggestedMax: 45,
-           ticks: { color: "rgba(0,0,0,0.58)",
-                    font: { family: "Inter, Arial, sans-serif", size: 10 } },
-           grid: { color: "rgba(0,0,0,0.06)" } }
+           ticks: { color: '#666666', font: { family: 'Inter, Arial, sans-serif', size: 10 } },
+           grid: { color: 'rgba(0,0,0,0.06)' } }
     },
-    plugins: { legend: { labels: { color: "rgba(0,0,0,0.87)",
-                                   font: { family: "Inter, Arial, sans-serif", size: 10 },
+    plugins: { legend: { labels: { color: '#222222',
+                                   font: { family: 'Inter, Arial, sans-serif', size: 10 },
                                    boxWidth: 14 } } }
   }
 });
 
-/* ---------- connection ---------- */
+/* ── app init (runs after auth) ───────────────────────────────────── */
+let map, plannedLine, trackLine, boxMarker, originMarker, destMarker;
+const track = [];
+
+function initApp() {
+  initMap();
+  initButtons();
+  startFreshness();
+}
+
+function initMap() {
+  const midLat = (ORIGIN[0] + DESTINATION[0]) / 2;
+  const midLon = (ORIGIN[1] + DESTINATION[1]) / 2;
+
+  map = L.map('map', { zoomControl: true, attributionControl: true })
+         .setView([midLat, midLon], 11);
+
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxZoom: 18
+  }).addTo(map);
+
+  // Planned route — dashed grey
+  plannedLine = L.polyline(PLANNED_ROUTE, {
+    color: '#888', weight: 2, dashArray: '6 6', opacity: 0.7
+  }).addTo(map);
+
+  // Actual GPS track — solid black (Renault ink)
+  trackLine = L.polyline([], { color: '#000000', weight: 3 }).addTo(map);
+
+  // Custom icons
+  const iconOpts = size => L.divIcon({
+    className: '',
+    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;
+           background:#ffed00;border:2px solid #000;
+           box-shadow:0 1px 4px rgba(0,0,0,0.4)"></div>`,
+    iconAnchor: [size/2, size/2]
+  });
+
+  originMarker = L.marker(ORIGIN, { icon: iconOpts(10) })
+    .addTo(map)
+    .bindTooltip('Pengiriman — Pelabuhan Simongan', { permanent: false });
+
+  destMarker = L.marker(DESTINATION, { icon: iconOpts(10) })
+    .addTo(map)
+    .bindTooltip('Tujuan — Puskesmas Kudus', { permanent: false });
+
+  const boxIcon = L.divIcon({
+    className: '',
+    html: `<div style="width:16px;height:16px;border-radius:2px;
+           background:#ffed00;border:2px solid #000;
+           box-shadow:0 1px 6px rgba(0,0,0,0.5);
+           display:flex;align-items:center;justify-content:center;">
+           <div style="width:6px;height:6px;background:#000"></div></div>`,
+    iconAnchor: [8, 8]
+  });
+  boxMarker = L.marker(ORIGIN, { icon: boxIcon, zIndexOffset: 1000 })
+    .addTo(map)
+    .bindTooltip('Kotak aktif', { permanent: false });
+
+  // Fit map to planned route bounds
+  map.fitBounds(plannedLine.getBounds(), { padding: [32, 32] });
+}
+
+function updateMap(lat, lon, kph, sat) {
+  track.push([lat, lon]);
+  if (track.length > 500) track.shift();
+  trackLine.setLatLngs(track);
+  boxMarker.setLatLng([lat, lon]);
+
+  // Auto-pan if box goes off screen, but don’t force-recenter every tick
+  if (!map.getBounds().contains([lat, lon])) {
+    map.panTo([lat, lon]);
+  }
+
+  $('gpsCoord').textContent = lat.toFixed(5) + ', ' + lon.toFixed(5);
+  $('gpsKph').textContent   = kph + ' km/h';
+  $('gpsSat').textContent   = sat + ' satelit';
+  $('gpsStatus').textContent = 'Fix aktif';
+}
+
+/* ── connection ───────────────────────────────────────────────────────── */
 function setConn(mode, detail) {
-  const dot = $("connDot"), txt = $("connText"), btn = $("btnConn");
-  document.querySelectorAll(".btn.mode,#btnSp,#btnMute,#btnHand,#btnPing")
-    .forEach(b => b.disabled = (mode !== "online"));
-  if (mode === "online")      { dot.className = "dot on";  txt.textContent = "MQTT connected"; btn.textContent = "Disconnect"; }
-  else if (mode === "connecting") { dot.className = "dot warn"; txt.textContent = "connecting…"; btn.textContent = "Connect"; }
-  else if (mode === "error")  { dot.className = "dot bad"; txt.textContent = "error" + (detail ? ": " + detail : ""); btn.textContent = "Connect"; }
-  else                        { dot.className = "dot";     txt.textContent = "offline"; btn.textContent = "Connect"; }
+  const dot = $('connDot'), txt = $('connText'), btn = $('btnConn');
+  document.querySelectorAll('.btn.mode,#btnSp,#btnMute,#btnHand,#btnPing')
+    .forEach(b => b.disabled = (mode !== 'online'));
+  if      (mode === 'online')      { dot.className = 'dot on';   txt.textContent = 'MQTT connected'; btn.textContent = 'Disconnect'; }
+  else if (mode === 'connecting')  { dot.className = 'dot warn'; txt.textContent = 'connecting…';   btn.textContent = 'Connect'; }
+  else if (mode === 'error')       { dot.className = 'dot bad';  txt.textContent = 'error' + (detail ? ': ' + detail : ''); btn.textContent = 'Connect'; }
+  else                             { dot.className = 'dot';      txt.textContent = 'offline';       btn.textContent = 'Connect'; }
 }
 
 function connect() {
   if (client) { try { client.end(true); } catch (e) {} client = null; }
-  const url = $("url").value.trim() || DEFAULT_URL;
-  base = ($("base").value.trim() || DEFAULT_BASE).replace(/\/+$/, "");
-  setConn("connecting");
+  const url = $('url').value.trim() || DEFAULT_URL;
+  base = ($('base').value.trim() || DEFAULT_BASE).replace(/\/+$/, '');
+  setConn('connecting');
   try {
     client = mqtt.connect(url, {
-      clientId: "ccdash-" + Math.random().toString(16).slice(2, 10),
+      clientId: 'ccdash-' + Math.random().toString(16).slice(2, 10),
       reconnectPeriod: 4000, connectTimeout: 8000
     });
-  } catch (e) { setConn("error", e.message); return; }
-  client.on("connect", () => {
-    isConnected = true; setConn("online");
-    ["status", "state", "event", "settings"].forEach(s => client.subscribe(base + "/" + s));
+  } catch (e) { setConn('error', e.message); return; }
+  client.on('connect', () => {
+    isConnected = true; setConn('online');
+    ['status', 'state', 'event', 'settings'].forEach(s => client.subscribe(base + '/' + s));
   });
-  client.on("message", onMessage);
-  client.on("error",   e  => setConn("error", e && e.message ? e.message : "connection error"));
-  client.on("close",   () => { isConnected = false; setConn("offline"); });
-  client.on("reconnect", () => setConn("connecting"));
+  client.on('message',   onMessage);
+  client.on('error',     e  => setConn('error', e && e.message ? e.message : 'connection error'));
+  client.on('close',     () => { isConnected = false; setConn('offline'); });
+  client.on('reconnect', () => setConn('connecting'));
 }
 
 function disconnect() {
   if (client) { try { client.end(true); } catch (e) {} }
-  client = null; isConnected = false; setConn("offline");
+  client = null; isConnected = false; setConn('offline');
 }
 
 function cmd(obj) {
   if (!isConnected || !client) return;
-  client.publish(base + "/cmd", JSON.stringify(obj));
+  client.publish(base + '/cmd', JSON.stringify(obj));
 }
 
-/* ---------- incoming messages ---------- */
+/* ── incoming messages ───────────────────────────────────────────────────── */
 function onMessage(topic, msg) {
   lastMsgAt = Date.now();
   const suffix = topic.slice(base.length + 1);
   let data = null;
   try { data = JSON.parse(msg.toString()); } catch (e) { return; }
-  if      (suffix === "state")    onState(data);
-  else if (suffix === "event")    onEvent(data);
-  else if (suffix === "settings") onSettings(data);
-  else if (suffix === "status")   onStatus(msg.toString().trim());
+  if      (suffix === 'state')    onState(data);
+  else if (suffix === 'event')    onEvent(data);
+  else if (suffix === 'settings') onSettings(data);
+  else if (suffix === 'status')   onStatus(msg.toString().trim());
 }
 
-const BADGE_CLASS = { OK:"ok", "DOOR-OPEN":"warn", "BATT-LOW":"warn",
-                      "PASSIVE-HOLD":"info", EXCURSION:"bad", QUARANTINE:"crit", OFFLINE:"" };
+const BADGE_CLASS = { OK:'ok', 'DOOR-OPEN':'warn', 'BATT-LOW':'warn',
+                      'PASSIVE-HOLD':'info', EXCURSION:'bad', QUARANTINE:'crit', OFFLINE:'' };
 
 function onState(d) {
-  $("t1").textContent  = d.t1.toFixed(1);
-  $("t2").textContent  = d.t2.toFixed(1);
-  $("amb").textContent = d.amb.toFixed(0);
-  $("batt").textContent = d.batt.toFixed(1);
-  const bt = $("battTag");
-  if      (d.batt < 10.5) { bt.textContent = "CRITICAL"; bt.className = "tag crit"; }
-  else if (d.batt < 11.0) { bt.textContent = "LOW";      bt.className = "tag low"; }
-  else                    { bt.textContent = "OK";       bt.className = "tag"; }
+  $('t1').textContent   = d.t1.toFixed(1);
+  $('t2').textContent   = d.t2.toFixed(1);
+  $('amb').textContent  = d.amb.toFixed(0);
+  $('batt').textContent = d.batt.toFixed(1);
+  const bt = $('battTag');
+  if      (d.batt < 10.5) { bt.textContent = 'CRITICAL'; bt.className = 'tag crit'; }
+  else if (d.batt < 11.0) { bt.textContent = 'LOW';      bt.className = 'tag low'; }
+  else                    { bt.textContent = 'OK';       bt.className = 'tag'; }
 
-  const badge = $("badge");
+  const badge = $('badge');
   badge.textContent = d.state;
-  badge.className = "badge " + (BADGE_CLASS[d.state] || "");
+  badge.className = 'badge ' + (BADGE_CLASS[d.state] || '');
 
-  $("compDot").className = "dot " + (d.comp ? "comp-on" : "");
-  $("compTxt").textContent = d.comp ? "RUNNING" : "stopped";
+  $('compDot').className = 'dot ' + (d.comp ? 'comp-on' : '');
+  $('compTxt').textContent = d.comp ? 'RUNNING' : 'stopped';
 
   const pct = Math.min(100, d.exc / 15 * 100);
-  const eb = $("excBar");
-  eb.style.width = pct + "%";
-  eb.className = pct > 60 ? "hot" : (pct > 25 ? "warnbg" : "");
-  $("excTxt").textContent = d.exc.toFixed(1) + "/15m";
+  const eb = $('excBar');
+  eb.style.width = pct + '%';
+  eb.className = pct > 60 ? 'hot' : (pct > 25 ? 'warnbg' : '');
+  $('excTxt').textContent = d.exc.toFixed(1) + '/15m';
 
-  $("pcm").textContent = d.pcm.toFixed(0);
-  const pb = $("pcmBar");
-  pb.style.width = d.pcm + "%";
-  pb.className = d.pcm < 20 ? "hot" : (d.pcm < 45 ? "warnbg" : "");
-  $("hold").textContent = d.hold >= 99 ? "≥ 99 h" : d.hold.toFixed(1) + " h";
+  $('pcm').textContent = d.pcm.toFixed(0);
+  const pb = $('pcmBar');
+  pb.style.width = d.pcm + '%';
+  pb.className = d.pcm < 20 ? 'hot' : (d.pcm < 45 ? 'warnbg' : '');
+  $('hold').textContent = d.hold >= 99 ? '≥ 99 h' : d.hold.toFixed(1) + ' h';
+
+  if (typeof d.lat === 'number' && typeof d.lon === 'number') {
+    updateMap(d.lat, d.lon, d.kph || 0, d.sat || 0);
+  }
 
   chainList.push({ seq: d.seq, hash: d.hash });
   if (chainList.length > 6) chainList.shift();
-  $("chain").innerHTML = chainList.slice().reverse()
-    .map((r, i) => "<li><b>" + r.hash + "</b>  <span class='sq'>record #" + r.seq +
-                   (i === 0 ? " · chain head" : "") + "</span></li>").join("");
+  $('chain').innerHTML = chainList.slice().reverse()
+    .map((r, i) => '<li><b>' + r.hash + '</b>  <span class="sq">record #' + r.seq +
+                   (i === 0 ? ' · chain head' : '') + '</span></li>').join('');
 
   pushChart(d);
 }
@@ -483,72 +888,79 @@ function pushChart(d) {
     c.labels.shift();
     c.datasets.forEach(ds => ds.data.shift());
   }
-  chart.update("none");
+  chart.update('none');
 }
 
-const EV_CLASS = { "QUARANTINE FLAGGED":"crit", "EXCURSION START":"bad",
-                   "BATTERY LOW":"warn", "DOOR OPEN":"warn" };
+const EV_CLASS = { 'QUARANTINE FLAGGED':'crit', 'EXCURSION START':'bad',
+                   'BATTERY LOW':'warn', 'DOOR OPEN':'warn' };
 
 function onEvent(d) {
-  const box = $("events");
-  const empty = box.querySelector(".empty"); if (empty) empty.remove();
-  const div = document.createElement("div");
-  div.className = "ev " + (EV_CLASS[d.event] || "");
-  div.innerHTML = "<b>" + esc(d.event) + "</b> <span class='t'>· t=" + esc(d.t) +
-                  " · #" + d.seq + "</span><br>" + esc(d.note || "");
+  const box = $('events');
+  const empty = box.querySelector('.empty'); if (empty) empty.remove();
+  const div = document.createElement('div');
+  div.className = 'ev ' + (EV_CLASS[d.event] || '');
+  div.innerHTML = '<b>' + esc(d.event) + '</b> <span class="t">· t=' + esc(d.t) +
+                  ' · #' + d.seq + '</span><br>' + esc(d.note || '');
   box.prepend(div);
   while (box.children.length > 60) box.lastChild.remove();
 }
 
 function onSettings(d) {
-  document.querySelectorAll(".btn.mode").forEach(b =>
-    b.classList.toggle("is-active", b.dataset.mode === d.mode));
-  $("onT").value  = d.onT;
-  $("offT").value = d.offT;
+  document.querySelectorAll('.btn.mode').forEach(b =>
+    b.classList.toggle('is-active', b.dataset.mode === d.mode));
+  $('onT').value  = d.onT;
+  $('offT').value = d.offT;
 }
 
 function onStatus(s) {
-  if (s === "offline") {
-    const badge = $("badge");
-    badge.textContent = "OFFLINE";
-    badge.className = "badge";
-    $("compTxt").textContent = "—";
+  if (s === 'offline') {
+    const badge = $('badge');
+    badge.textContent = 'OFFLINE';
+    badge.className = 'badge';
+    $('compTxt').textContent = '—';
   }
 }
 
 function esc(s) {
   return String(s).replace(/[&<>"']/g, m =>
-    ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[m]));
+    ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[m]));
 }
 
-/* ---------- buttons ---------- */
-$("btnConn").addEventListener("click", () => isConnected ? disconnect() : connect());
-document.querySelectorAll(".btn.mode").forEach(b =>
-  b.addEventListener("click", () => cmd({ cmd: "mode", value: b.dataset.mode })));
-$("btnSp").addEventListener("click", () => {
-  const on  = parseFloat($("onT").value);
-  const off = parseFloat($("offT").value);
-  if (isNaN(on) || isNaN(off)) return;
-  cmd({ cmd: "setpoints", on: on, off: off });
-});
-$("btnMute").addEventListener("click", () => cmd({ cmd: "mute" }));
-$("btnHand").addEventListener("click", () => cmd({ cmd: "handover" }));
-$("btnPing").addEventListener("click", () => cmd({ cmd: "ping" }));
+/* ── buttons ───────────────────────────────────────────────────────────── */
+function initButtons() {
+  $('btnConn').addEventListener('click', () => isConnected ? disconnect() : connect());
+  document.querySelectorAll('.btn.mode').forEach(b =>
+    b.addEventListener('click', () => cmd({ cmd: 'mode', value: b.dataset.mode })));
+  $('btnSp').addEventListener('click', () => {
+    const on  = parseFloat($('onT').value);
+    const off = parseFloat($('offT').value);
+    if (isNaN(on) || isNaN(off)) return;
+    cmd({ cmd: 'setpoints', on: on, off: off });
+  });
+  $('btnMute').addEventListener('click', () => cmd({ cmd: 'mute' }));
+  $('btnHand').addEventListener('click', () => cmd({ cmd: 'handover' }));
+  $('btnPing').addEventListener('click',  () => cmd({ cmd: 'ping' }));
+}
 
-/* ---------- freshness ticker ---------- */
-setInterval(() => {
-  const el = $("fresh");
-  if (!lastMsgAt) { el.textContent = ""; el.className = "fresh"; return; }
-  const s = Math.round((Date.now() - lastMsgAt) / 1000);
-  el.textContent = "updated " + s + "s ago";
-  el.className = "fresh" + (s > 10 ? " stale" : "");
-}, 1000);
+/* ── freshness ticker ─────────────────────────────────────────────────────── */
+function startFreshness() {
+  setInterval(() => {
+    const el = $('fresh');
+    if (!lastMsgAt) { el.textContent = ''; el.className = 'fresh'; return; }
+    const s = Math.round((Date.now() - lastMsgAt) / 1000);
+    el.textContent = 'updated ' + s + 's ago';
+    el.className = 'fresh' + (s > 10 ? ' stale' : '');
+  }, 1000);
+}
 
-/* ---------- liquid glass (Chromium refraction; frosted fallback elsewhere) ---------- */
+/* ── liquid glass (progressive enhancement) ─────────────────────────── */
 if (window.liquidGlass) {
-  document.querySelectorAll(".card, .bar").forEach(el =>
+  document.querySelectorAll('.card, .bar').forEach(el =>
     liquidGlass(el, { scale: -70, chroma: 4, blur: 4, saturate: 1.4, fallbackBlur: 12 }));
 }
+
+/* ── boot ─────────────────────────────────────────────────────────────────── */
+checkAuth();
 </script>
 </body>
 </html>
