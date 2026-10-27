@@ -108,7 +108,8 @@ Grouped; colors are suggestions Wokwi renders on screen.
 - `GND` → all module GNDs, buzzer pin 1, LED resistors, buttons, switch pin 1
 
 **Temperature (OneWire bus, shared)**
-- DS18B20-1 DATA, DS18B20-2 DATA and DS18B20-3 DATA → **GPIO 4** (+ 4.7 kΩ resistor between GPIO 4 and 3V3)
+- DS18B20-1/2/3 **DQ** → **GPIO 4** (+ 4.7 kΩ resistor between GPIO 4 and 3V3)
+  - Wokwi names the probe data pin `DQ`, and each probe needs a unique `deviceID` attribute (111111111111 / 222222222222 / 333333333333) — see docs.wokwi.com/parts/wokwi-ds18b20
   - probe names follow detail.md §10: **T1 top-centre · T2 bottom-centre · T3 mid wall**
 
 **Ambient**
@@ -162,7 +163,7 @@ The `control()` function in the sketch is the heart that transfers unchanged: hy
 | Symptom | Fix |
 |---|---|
 | OLED blank | check I2C wiring (SDA 21 / SCL 22); address must be 0x3C |
-| Temps read −127 (dashboard shows `ERR`) | probe did not answer: check all DS18B20 DATA wires → **D4**, VCC → 3V3, GND → GND, and the **4.7 kΩ pull-up** (`rpull`) between D4 and 3V3. Startup now prints `[DS18B20] N probe(s) found` — if it says 0, the bus is the problem. After ~5 s of dead bus the box enters `SENSOR-FLT` (red LED + beeper) and parks the compressor; it recovers by itself once the bus answers |
+| Temps read −127 (dashboard shows `ERR`) | Wokwi-specific: the probe pin is named **`DQ`** (not `DATA` — a wrong pin name silently drops the wire) and **every DS18B20 needs a unique `deviceID`** — identical IDs collide on the 1-Wire bus. The repo `diagram.json` has both fixed (`DQ` → D4, deviceIDs 111…/222…/333…). Also keep VCC → 3V3, GND → GND and the 4.7 kΩ pull-up (`rpull`) between D4 and 3V3. Startup prints `[DS18B20] N probe(s) found`; after ~5 s of dead bus the box enters `SENSOR-FLT` and recovers by itself once the bus answers |
 | DHT reads `nan` for the first seconds | normal — wait one read cycle (~2 s) |
 | Compile error on `ledcSetup` | your core is ESP32 v3; the sketch auto-detects, but re-check the `#if` block |
 | Libraries not found | install all seven from STEP 3 |

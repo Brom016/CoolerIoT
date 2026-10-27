@@ -693,8 +693,8 @@ void setup() {
                 probeCount, PIN_ONEWIRE);
   if (probeCount == 0)
     Serial.println("[DS18B20] !! No probe answered - temps will read -127. Check in Wokwi: "
-                   "all three DATA pins -> D4, VCC -> 3V3, GND -> GND, and the 4.7k pull-up (rpull) "
-                   "between D4 and 3V3.");
+                   "every probe uses pin DQ (not DATA) -> D4, has a unique deviceID attribute, "
+                   "VCC -> 3V3, GND -> GND, plus the 4.7k pull-up (rpull) between D4 and 3V3.");
 
   // ---- MQTT topics & connection ----
   snprintf(topicState,    sizeof(topicState),    "%s/state",    TOPIC_BASE);
@@ -826,7 +826,8 @@ void loop() {
     if (t1 == DEVICE_DISCONNECTED_C && !warnedDisc) {
       warnedDisc = true;
       Serial.println("[DS18B20] !! -127 = probe did not answer (DEVICE_DISCONNECTED). "
-                     "Check the DATA wires -> D4 and the 4.7k pull-up (rpull) between D4 and 3V3.");
+                     "Check the DQ wires -> D4, a unique deviceID per probe, and the "
+                     "4.7k pull-up (rpull) between D4 and 3V3.");
     } else if (t1 != DEVICE_DISCONNECTED_C) {
       warnedDisc = false;
     }
